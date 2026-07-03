@@ -10,6 +10,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.service.vector.request.InsertReq;
+import com.knowbrain.retrieval.engine.RAGCacheService;
 import com.knowbrain.retrieval.engine.TextTokenizer;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
@@ -47,6 +48,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final SmartChunker chunker;
     private final MilvusClientV2 milvusClient;
     private final EmbeddingModel embeddingModel;
+    private final RAGCacheService cacheService;
 
     @Value("${minio.bucket}")
     private String bucket;
@@ -62,13 +64,15 @@ public class DocumentServiceImpl implements DocumentService {
                                MinioClient minioClient,
                                SmartChunker chunker,
                                MilvusClientV2 milvusClient,
-                               EmbeddingModel embeddingModel) {
+                               EmbeddingModel embeddingModel,
+                               RAGCacheService cacheService) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.minioClient = minioClient;
         this.chunker = chunker;
         this.milvusClient = milvusClient;
         this.embeddingModel = embeddingModel;
+        this.cacheService = cacheService;
     }
 
     @Override
@@ -93,6 +97,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         try {
             parseAndVectorize(doc, file);
+            cacheService.invalidateAll(); // 新文档入库，清除旧缓存
         } catch (Exception e) {
             log.error("文档处理失败: id={}", doc.getId(), e);
             doc.setStatus("FAILED");
@@ -109,6 +114,7 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     public void delete(Long id) {
         documentMapper.deleteById(id);
+        cacheService.invalidateAll();
         log.info("文档已删除: id={}", id);
     }
 

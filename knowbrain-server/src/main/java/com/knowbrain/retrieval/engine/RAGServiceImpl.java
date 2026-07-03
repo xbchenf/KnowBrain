@@ -25,16 +25,19 @@ public class RAGServiceImpl implements RAGService {
     private final HybridSearchService hybridSearchService;
     private final ChatClient chatClient;
     private final QueryPreprocessor preprocessor;
+    private final RAGCacheService cacheService;
 
     @Value("classpath:prompts/rag-system.txt")
     private Resource promptTemplate;
 
     public RAGServiceImpl(HybridSearchService hybridSearchService,
                           ChatClient.Builder chatClientBuilder,
-                          QueryPreprocessor preprocessor) {
+                          QueryPreprocessor preprocessor,
+                          RAGCacheService cacheService) {
         this.hybridSearchService = hybridSearchService;
         this.chatClient = chatClientBuilder.build();
         this.preprocessor = preprocessor;
+        this.cacheService = cacheService;
     }
 
     @Override
@@ -44,10 +47,16 @@ public class RAGServiceImpl implements RAGService {
 
     @Override
     public ChatResponse chat(String question, List<Long> spaceIds) {
+        // 0. Redis 缓存检查（高频问题短路）
+        ChatResponse cached = cacheService.get(question, spaceIds);
+        if (cached != null) {
+            return cached;
+        }
+
         // 1. 预处理：术语改写 + FAQ 精确匹配
         QueryPreprocessor.Result pre = preprocessor.preprocess(question);
 
-        // 2. FAQ 命中 → 直接返回预设答案（短路）
+        // 2. FAQ 命中 → 直接返回预设答案（短路，不缓存）
         if (pre.isFaqMatched()) {
             return new ChatResponse(pre.faqAnswer(), List.of(), false, "high");
         }
@@ -57,14 +66,14 @@ public class RAGServiceImpl implements RAGService {
         // 3. 混合检索 Top-5 相关切片（带空间过滤）
         List<SearchResult> sources = search(processed, 5, spaceIds);
 
-        // 2. 无结果 → 兜底
+        // 4. 无结果 → 兜底（不缓存）
         if (sources.isEmpty()) {
             return new ChatResponse(
                     "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。",
                     Collections.emptyList(), true, "low");
         }
 
-        // 3. 拼接上下文
+        // 5. 拼接上下文
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < sources.size(); i++) {
             SearchResult s = sources.get(i);
@@ -72,7 +81,7 @@ public class RAGServiceImpl implements RAGService {
                     .append(s.getContent()).append("\n\n");
         }
 
-        // 4. 加载 Prompt 模板 + 调用 LLM
+        // 6. 加载 Prompt 模板 + 调用 LLM
         String prompt = buildPrompt(context.toString(), question);
         String answer;
         try {
@@ -88,7 +97,7 @@ public class RAGServiceImpl implements RAGService {
             return new ChatResponse(fallback, fallbackSources, true, "low");
         }
 
-        // 5. 构造溯源 + 置信度
+        // 7. 构造溯源 + 置信度
         List<ChatResponse.SourceInfo> sourceInfos = sources.stream()
                 .map(s -> new ChatResponse.SourceInfo(
                         s.getDocumentTitle(), s.getDocumentId(),
@@ -97,11 +106,30 @@ public class RAGServiceImpl implements RAGService {
 
         String confidence = evaluateConfidence(sources, answer);
 
-        return new ChatResponse(answer, sourceInfos, false, confidence);
+        ChatResponse response = new ChatResponse(answer, sourceInfos, false, confidence);
+
+        // 8. 写入 Redis 缓存（仅 medium+ 非降级回答）
+        cacheService.put(question, spaceIds, response);
+
+        return response;
     }
 
     @Override
     public StreamContext chatStream(String question, List<Long> spaceIds) {
+        // 0. Redis 缓存检查（高频问题短路）
+        ChatResponse cached = cacheService.get(question, spaceIds);
+        if (cached != null) {
+            List<SearchResult> cachedSources = cached.getSources() != null
+                    ? cached.getSources().stream()
+                        .map(s -> new SearchResult(s.getText(), s.getTitle(),
+                                s.getDocumentId(), s.getChunkIndex(), 1.0))
+                        .toList()
+                    : List.of();
+            return new StreamContext(
+                    Flux.just(cached.getAnswer()),
+                    cachedSources, false, cached.getConfidence());
+        }
+
         // 1. 预处理
         QueryPreprocessor.Result pre = preprocessor.preprocess(question);
 

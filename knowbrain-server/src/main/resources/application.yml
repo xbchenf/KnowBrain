@@ -112,6 +112,12 @@ mybatis-plus:
 scenario:
   seed-path: ${SCENARIO_SEED_PATH:classpath:scenarios/it-helpdesk}
 
+# RAG 问答缓存
+rag:
+  cache:
+    enabled: ${RAG_CACHE_ENABLED:true}
+    ttl-minutes: ${RAG_CACHE_TTL_MINUTES:60}
+
 # 日志
 logging:
   level:

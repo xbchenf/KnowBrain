@@ -1,0 +1,22 @@
+[
+  { "term": "wifi", "formal": "无线网络", "synonyms": ["无线", "wi-fi", "wlan"] },
+  { "term": "vpn", "formal": "VPN 虚拟专用网络", "synonyms": ["虚拟专用网", "翻墙"] },
+  { "term": "蓝屏", "formal": "系统蓝屏崩溃", "synonyms": ["蓝底白字", "死机蓝屏", "BSOD"] },
+  { "term": "开机", "formal": "系统启动", "synonyms": ["启动", "开机启动"] },
+  { "term": "卡顿", "formal": "系统运行缓慢", "synonyms": ["卡", "慢", "很卡", "反应慢", "延迟高"] },
+  { "term": "密码", "formal": "账号密码", "synonyms": ["密码忘了", "忘记密码", "改密码"] },
+  { "term": "邮箱", "formal": "企业邮箱", "synonyms": ["邮件", "outlook", "foxmail"] },
+  { "term": "打印机", "formal": "打印机设备", "synonyms": ["打印", "复印", "扫描"] },
+  { "term": "会议", "formal": "会议室设备", "synonyms": ["投屏", "投影仪", "视频会议", "zoom", "teams"] },
+  { "term": "远程", "formal": "远程桌面连接", "synonyms": ["远程桌面", "远程控制", "rdp", "teamviewer"] },
+  { "term": "磁盘", "formal": "磁盘空间", "synonyms": ["硬盘", "空间不足", "c盘满了"] },
+  { "term": "安装", "formal": "软件安装与卸载", "synonyms": ["下载", "装软件", "卸载", "更新"] },
+  { "term": "浏览器", "formal": "浏览器应用", "synonyms": ["chrome", "edge", "网页打不开", "网页"] },
+  { "term": "网络", "formal": "网络连接", "synonyms": ["断网", "连不上", "没网", "网线", "网口"] },
+  { "term": "安全", "formal": "信息安全", "synonyms": ["病毒", "木马", "钓鱼", "勒索", "中毒"] },
+  { "term": "备份", "formal": "数据备份与恢复", "synonyms": ["文件恢复", "数据丢失", "误删"] },
+  { "term": "权限", "formal": "系统权限", "synonyms": ["没有权限", "拒绝访问", "access denied", "无权"] },
+  { "term": "账号", "formal": "用户账号", "synonyms": ["账户", "登录失败", "登不上", "用户名"] },
+  { "term": "手机", "formal": "移动设备", "synonyms": ["iphone", "安卓", "android", "ipad", "平板"] },
+  { "term": "office", "formal": "Office 办公套件", "synonyms": ["word", "excel", "ppt", "outlook", "办公软件"] }
+]

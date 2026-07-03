@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "respectGitignore": true,
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(for:*)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(git:add *)",
+      "Bash(git:commit *)",
+      "Bash(git:log *)",
+      "Bash(git:rev-parse *)",
+      "Bash(git:status *)",
+      "Bash(mvn:*)",
+      "Edit",
+      "Write"
+    ],
+    "deny": [
+      "Read(./target/**)",
+      "Read(./build/**)",
+      "Read(./dist/**)",
+      "Read(./node_modules/**)",
+      "Read(./.git/**)",
+      "Read(./.idea/**)",
+      "Read(./.vscode/**)",
+      "Read(./**/*.log)",
+      "Read(./**/*.csv)",
+      "Read(./**/*.xlsx)",
+      "Read(./**/*.env*)",
+      "Read(./backup/**)",
+      "Read(./temp/**)",
+      "Write(./.env*)",
+    ]
+  },
+  "context": {
+    "autoPruneThreshold": 0.9
+  }
+}

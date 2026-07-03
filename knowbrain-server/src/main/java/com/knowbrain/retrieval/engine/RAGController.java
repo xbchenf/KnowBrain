@@ -1,0 +1,175 @@
+package com.knowbrain.retrieval.engine;
+
+import com.knowbrain.auth.JwtUtil;
+import com.knowbrain.common.Result;
+import com.knowbrain.permission.PermissionService;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * RAG 问答控制器
+ *
+ * 支持认证可选模式：
+ * - 带 Authorization Header → 仅搜索用户可访问的空间
+ * - 无 Authorization Header → 仅搜索 PUBLIC 空间
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/v1/rag")
+@RequiredArgsConstructor
+public class RAGController {
+
+    private final RAGService ragService;
+    private final PermissionService permissionService;
+    private final JwtUtil jwtUtil;
+
+    /**
+     * RAG 问答：检索 + 生成（带空间权限过滤）
+     */
+    @PostMapping("/chat")
+    public Result<ChatResponse> chat(@RequestBody Map<String, String> body,
+                                      HttpServletRequest request) {
+        String question = body.get("question");
+        if (question == null || question.isBlank()) {
+            return Result.badRequest("问题不能为空");
+        }
+        List<Long> spaceIds = getAccessibleSpaceIds(request);
+        ChatResponse response = ragService.chat(question, spaceIds);
+        return Result.ok(response);
+    }
+
+    /**
+     * 纯检索（不调用 LLM，返回 Top-K 文档片段，带空间权限过滤）
+     */
+    @GetMapping("/search")
+    public Result<List<SearchResult>> search(
+            @RequestParam("q") String question,
+            @RequestParam(value = "topK", defaultValue = "5") int topK,
+            HttpServletRequest request) {
+        if (question == null || question.isBlank()) {
+            return Result.badRequest("搜索关键词不能为空");
+        }
+        List<Long> spaceIds = getAccessibleSpaceIds(request);
+        List<SearchResult> results = ragService.search(question, topK, spaceIds);
+        return Result.ok(results);
+    }
+
+    /**
+     * RAG 流式问答（SSE）— token 逐字推送 + 溯源元数据
+     *
+     * SSE 事件类型：
+     * - token   : LLM 生成文本片段（逐字/逐词）
+     * - sources : 检索溯源列表（JSON 数组）
+     * - done    : 完成信号，包含 confidence / fallback
+     * - error   : 异常信号
+     */
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter chatStream(@RequestBody Map<String, String> body,
+                                  HttpServletRequest request) {
+        String question = body.get("question");
+        if (question == null || question.isBlank()) {
+            SseEmitter bad = new SseEmitter();
+            bad.completeWithError(new IllegalArgumentException("问题不能为空"));
+            return bad;
+        }
+
+        List<Long> spaceIds = getAccessibleSpaceIds(request);
+        SseEmitter emitter = new SseEmitter(300_000L); // 5 分钟超时
+
+        // 在独立线程中桥接 Flux → SSE
+        Thread worker = new Thread(() -> {
+            try {
+                log.info("SSE: 开始流式处理 question={}", question);
+                StreamContext ctx = ragService.chatStream(question, spaceIds);
+                log.info("SSE: StreamContext 就绪 sources={} fallback={}", ctx.sources().size(), ctx.fallback());
+                Flux<String> tokens = ctx.tokens();
+
+                // 逐 token 推送
+                tokens.doOnNext(token -> {
+                    try {
+                        emitter.send(SseEmitter.event().name("token").data(token));
+                    } catch (Exception e) {
+                        log.warn("SSE token 推送失败: {}", e.getMessage());
+                    }
+                }).doOnComplete(() -> {
+                    log.info("SSE: token 流完成，推送元数据");
+                    try {
+                        // 推送溯源列表
+                        emitter.send(SseEmitter.event()
+                                .name("sources")
+                                .data(ctx.sources()));
+                        // 推送完成信号
+                        Map<String, Object> done = Map.of(
+                                "confidence", ctx.confidence(),
+                                "fallback", ctx.fallback()
+                        );
+                        emitter.send(SseEmitter.event()
+                                .name("done")
+                                .data(done));
+                        emitter.complete();
+                        log.info("SSE: 流式问答完成");
+                    } catch (Exception e) {
+                        log.error("SSE 元数据推送失败", e);
+                        emitter.completeWithError(e);
+                    }
+                }).doOnError(e -> {
+                    log.error("LLM 流式调用异常", e);
+                    try {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data("服务暂时不可用，请稍后重试。"));
+                    } catch (Exception ignored) {}
+                    emitter.completeWithError(e);
+                }).subscribe();
+
+            } catch (Exception e) {
+                log.error("流式问答初始化失败", e);
+                try {
+                    emitter.send(SseEmitter.event()
+                            .name("error")
+                            .data("服务暂时不可用，请稍后重试。"));
+                } catch (Exception ignored) {}
+                emitter.completeWithError(e);
+            }
+        });
+        worker.setName("sse-worker");
+        worker.setDaemon(true);
+        worker.start();
+
+        return emitter;
+    }
+
+    /**
+     * 从请求中提取用户 ID，查询可访问空间列表
+     * 未登录用户只能看 PUBLIC 空间
+     */
+    private List<Long> getAccessibleSpaceIds(HttpServletRequest request) {
+        Long userId = extractUserId(request);
+        return permissionService.getAccessibleSpaceIds(userId);
+    }
+
+    private Long extractUserId(HttpServletRequest request) {
+        // 尝试从 request attribute 获取（AuthInterceptor 注入的）
+        Object uid = request.getAttribute("userId");
+        if (uid instanceof Number n) return n.longValue();
+
+        // 降级：手动解析 Authorization Header
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            Map<String, Object> claims = jwtUtil.verifyToken(authHeader.substring(7));
+            if (claims != null && claims.get("userId") != null) {
+                return ((Number) claims.get("userId")).longValue();
+            }
+        }
+
+        return null; // 未登录
+    }
+}

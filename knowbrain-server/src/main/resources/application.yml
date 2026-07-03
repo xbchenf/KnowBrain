@@ -6,10 +6,14 @@ server:
       enabled: true
       force: true
 
+# CORS 跨域配置
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
 spring:
   # 数据源 — MySQL
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:knowbrain}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:knowbrain}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -45,7 +49,7 @@ spring:
           model: ${SPRING_AI_OPENAI_EMBEDDING_MODEL:text-embedding-v4}
           dimensions: 1024
 
-    # Spring AI — Milvus 向量存储
+    # Spring AI — Milvus 向量存储（关闭自动建表，改用自定义 Schema）
     vectorstore:
       milvus:
         client:
@@ -57,7 +61,20 @@ spring:
         index-type: IVF_FLAT
         metric-type: COSINE
         embedding-dimension: 1024
-        initialize-schema: true
+        initialize-schema: false
+
+# Milvus 混合检索配置
+milvus:
+  hybrid:
+    # BM25 分词器: chinese(jieba) / english / standard
+    analyzer: ${MILVUS_ANALYZER:chinese}
+    # RRF 融合平滑参数
+    rrf-k: ${MILVUS_RRF_K:60}
+    # 混合检索权重（dense:sparse）
+    dense-weight: ${MILVUS_DENSE_WEIGHT:0.6}
+    sparse-weight: ${MILVUS_SPARSE_WEIGHT:0.4}
+    # 开发模式：重启时重建 Collection（生产环境设为 false）
+    recreate-on-startup: ${MILVUS_RECREATE_ON_STARTUP:false}
 
 # MinIO 对象存储
 minio:
@@ -89,6 +106,11 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# 场景配置
+# 场景配置（种子数据路径，仅首次启动导入 DB 时使用）
+scenario:
+  seed-path: ${SCENARIO_SEED_PATH:classpath:scenarios/it-helpdesk}
 
 # 日志
 logging:

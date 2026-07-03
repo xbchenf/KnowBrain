@@ -168,6 +168,50 @@ knowbrain-server/
 
 ---
 
+## 七.五、场景数据设计（categories / glossary / faq）
+
+> **设计说明**：这三类数据采用「JSON 种子 + DB 存储 + 内存缓存」的混合架构。
+> 详见下方各自用途说明，**不要删除 JSON 文件**——它们是首次部署时的种子数据源。
+
+### categories.json → kb_scenario_category
+
+**作用**：知识分类树，文档上传时选分类，检索时可按分类缩小范围。
+
+**数据结构**：树形（一级分类 → 子分类），`key` 为唯一标识，`parentKey` 表示父子关系。
+
+**加载策略**：首次启动从 JSON 导入 DB → 内存组装成树 → ScenarioConfig 缓存。
+
+### glossary.json → kb_scenario_glossary
+
+**作用**：查询改写。用户口语 → 正式技术术语，提升检索精度。
+
+**数据结构**：`term`（口语）→ `formal`（正式术语），`synonyms` 逗号分隔同义词。
+
+**匹配逻辑**：按术语长度降序匹配（避免短词误匹配），`Pattern.quote` 安全替换。
+
+### faq.json → kb_scenario_faq
+
+**作用**：高频问题预设答案库。命中 ≥ 2 个关键词时直接返回预设答案，**跳过 LLM 调用**（零延迟零成本）。
+
+**匹配逻辑**：倒排索引（keyword → FAQ 列表），QueryPreprocessor 中发生在向量检索之前。
+
+### 三者协作流水线
+
+```
+用户输入 → glossary 改写 → sensitiveWord 过滤 → FAQ 精确匹配
+                                                    ├─ 命中 → 短路返回
+                                                    └─ 未命中 → 向量检索 → LLM 生成
+categories 用于：文档上传分类 + 检索范围限定
+```
+
+### 运行时管理
+
+- **DB 优先**：启动时检查 DB，有数据则直接用；无数据则从 JSON 种子导入
+- **热更新**：管理后台 CRUD → 写 DB + 调 `reload()` 刷新内存缓存
+- **管理 API**：`/api/v1/admin/scenario/**`（需 ADMIN 角色）
+
+---
+
 ## 八、编码规范
 
 - 基础包名：`com.knowbrain`

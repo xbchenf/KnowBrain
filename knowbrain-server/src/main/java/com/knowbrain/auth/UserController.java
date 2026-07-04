@@ -61,7 +61,7 @@ public class UserController {
 
     @Operation(summary = "重置用户密码")
     @PutMapping("/{id}/reset-password")
-    public Result<Void> resetPassword(@PathVariable Long id, @RequestBody Map<String, String> request) {
+    public Result<String> resetPassword(@PathVariable Long id, @RequestBody Map<String, String> request) {
         userService.resetPassword(id, request.get("password"));
         return Result.ok("密码重置成功");
     }

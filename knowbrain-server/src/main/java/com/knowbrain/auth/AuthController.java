@@ -70,10 +70,10 @@ public class AuthController {
     @Operation(summary = "注册", description = "用户自助注册，默认 USER 角色")
     @PostMapping("/register")
     public Result<Map<String, Object>> register(@RequestBody Map<String, Object> request) {
-        String username = (String) request.get("username");
-        String password = (String) request.get("password");
-        String name = request.getOrDefault("name", username) != null ? request.get("name").toString() : username;
-        String phone = request.getOrDefault("phone", "") != null ? request.get("phone").toString() : "";
+        String username = request.get("username") != null ? request.get("username").toString() : null;
+        String password = request.get("password") != null ? request.get("password").toString() : null;
+        String name = request.get("name") != null ? request.get("name").toString() : username;
+        String phone = request.get("phone") != null ? request.get("phone").toString() : "";
         Long departmentId = null;
         if (request.containsKey("departmentId") && request.get("departmentId") != null) {
             try {

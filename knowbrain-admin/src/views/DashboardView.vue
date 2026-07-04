@@ -16,6 +16,12 @@
           <el-menu-item index="/dashboard">
             <el-icon><HomeFilled /></el-icon> 工作台
           </el-menu-item>
+          <el-menu-item v-if="isAdmin" index="/departments">
+            <el-icon><OfficeBuilding /></el-icon> 部门管理
+          </el-menu-item>
+          <el-menu-item v-if="isAdmin" index="/users">
+            <el-icon><User /></el-icon> 用户管理
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -86,7 +92,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Plus, Folder } from '@element-plus/icons-vue'
+import { HomeFilled, Plus, Folder, OfficeBuilding, User } from '@element-plus/icons-vue'
 import { listSpaces, createSpace } from '../api'
 
 const router = useRouter()
@@ -98,10 +104,15 @@ const showCreate = ref(false)
 const creating = ref(false)
 const createForm = reactive({ name: '', description: '', visibility: 'PRIVATE' })
 const userName = ref('')
+const isAdmin = ref(false)
 
 onMounted(async () => {
   const u = localStorage.getItem('kb_user')
-  if (u) userName.value = JSON.parse(u).name
+  if (u) {
+    const parsed = JSON.parse(u)
+    userName.value = parsed.name
+    isAdmin.value = parsed.role === 'ADMIN'
+  }
   await loadSpaces()
 })
 

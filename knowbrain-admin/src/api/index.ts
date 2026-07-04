@@ -70,8 +70,31 @@ export const uploadDocument = (file: File, spaceId: number) => {
   })
 }
 
+export const listDocuments = (spaceId: number, page = 1, size = 20) =>
+  api.get('/documents', { params: { spaceId, page, size } })
+
 export const getDocument = (id: number) =>
   api.get(`/documents/${id}`)
 
 export const deleteDocument = (id: number) =>
   api.delete(`/documents/${id}`)
+
+// ================== 部门管理 ==================
+export const listDepartments = () =>
+  api.get('/admin/departments')
+
+export const createDepartment = (data: Record<string, any>) =>
+  api.post('/admin/departments', data)
+
+export const updateDepartment = (id: number, data: Record<string, any>) =>
+  api.put(`/admin/departments/${id}`, data)
+
+export const deleteDepartment = (id: number) =>
+  api.delete(`/admin/departments/${id}`)
+
+// ================== 用户管理 ==================
+export const listUsers = (params: Record<string, any>) =>
+  api.get('/admin/users', { params })
+
+export const updateUser = (id: number, data: Record<string, any>) =>
+  api.put(`/admin/users/${id}`, data)

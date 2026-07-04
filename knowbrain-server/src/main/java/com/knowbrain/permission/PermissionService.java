@@ -1,6 +1,8 @@
 package com.knowbrain.permission;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.knowbrain.auth.SysUser;
+import com.knowbrain.auth.SysUserMapper;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.space.Space;
 import com.knowbrain.space.SpaceMapper;
@@ -8,17 +10,23 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
- * 权限管理服务 — 空间级 RBAC
+ * 权限管理服务 — 可见性 + 部门 + 角色 三因子权限模型
  *
- * 权限判断逻辑（按优先级）：
- * 1. PUBLIC 空间 → 所有人可读
- * 2. OWNER → 全部权限
- * 3. EDITOR → 读写文档
- * 4. VIEWER → 只读
- * 5. 非成员且非 PUBLIC → 无权限
+ * 读权限：
+ *   PUBLIC  → 所有登录用户
+ *   TEAM    → 部门匹配 或 Owner
+ *   PRIVATE → Owner 或显式成员
+ *
+ * 写权限：
+ *   ADMIN / MANAGER / SpaceOwner → 可写
+ *
+ * 检索权限过滤：
+ *   getAccessibleSpaceIds(userId) → 按上述规则返回空间 ID 列表
  */
 @Slf4j
 @Service
@@ -27,52 +35,62 @@ public class PermissionService {
 
     private final SpaceMapper spaceMapper;
     private final SpaceMemberMapper memberMapper;
+    private final SysUserMapper userMapper;
 
     /** 检查用户是否有权读取空间 */
     public void checkReadAccess(Long spaceId, Long userId) {
         Space space = spaceMapper.selectById(spaceId);
         if (space == null) throw new BizException(404, "空间不存在");
 
-        // PUBLIC 空间所有人可读
+        // 1. PUBLIC → 所有登录用户放行
         if ("PUBLIC".equals(space.getVisibility())) return;
 
-        // OWNER 直接放行
+        // 2. OWNER → 放行
         if (space.getOwnerId().equals(userId)) return;
 
-        // 检查是否空间成员
+        // 3. TEAM → 部门匹配
+        if ("TEAM".equals(space.getVisibility())) {
+            Long userDeptId = getUserDepartmentId(userId);
+            if (userDeptId != null && isInDepartmentScope(space.getDepartmentScope(), userDeptId)) {
+                return;
+            }
+            throw new BizException(403, "无权访问此空间（部门不匹配）");
+        }
+
+        // 4. PRIVATE → 显式成员
         SpaceMember member = getMember(spaceId, userId);
         if (member == null) throw new BizException(403, "无权访问此空间");
     }
 
-    /** 检查用户是否有权编辑空间内的文档 */
+    /** 检查用户是否有权编辑空间（写权限 = 角色决定） */
     public void checkWriteAccess(Long spaceId, Long userId) {
         Space space = spaceMapper.selectById(spaceId);
         if (space == null) throw new BizException(404, "空间不存在");
 
-        // OWNER → 可写
-        if (space.getOwnerId().equals(userId)) return;
+        // ADMIN / MANAGER → 全部可写
+        String role = getUserRole(userId);
+        if ("ADMIN".equals(role) || "MANAGER".equals(role)) return;
 
-        // EDITOR → 可写
-        SpaceMember member = getMember(spaceId, userId);
-        if (member != null && ("EDITOR".equals(member.getRole()) || "OWNER".equals(member.getRole()))) {
-            return;
-        }
+        // SpaceOwner → 自己的空间可写
+        if (space.getOwnerId().equals(userId)) return;
 
         throw new BizException(403, "无权编辑此空间");
     }
 
-    /** 检查用户是否为空间管理员（OWNER） */
+    /** 检查用户是否为空间管理员（OWNER 或系统 ADMIN） */
     public void checkOwnerAccess(Long spaceId, Long userId) {
         Space space = spaceMapper.selectById(spaceId);
         if (space == null) throw new BizException(404, "空间不存在");
-        if (!space.getOwnerId().equals(userId)) {
-            throw new BizException(403, "仅空间创建者可执行此操作");
-        }
+
+        String role = getUserRole(userId);
+        if ("ADMIN".equals(role)) return;
+        if (space.getOwnerId().equals(userId)) return;
+
+        throw new BizException(403, "仅空间创建者或系统管理员可执行此操作");
     }
 
-    /** 添加成员 */
+    /** 添加成员（仅 PRIVATE 空间使用） */
     public SpaceMember addMember(Long spaceId, Long userId, String role) {
-        // 检查是否已是成员
         SpaceMember existing = getMember(spaceId, userId);
         if (existing != null) {
             existing.setRole(role);
@@ -118,45 +136,80 @@ public class PermissionService {
      * 获取用户可读的空间 ID 列表（用于检索权限过滤）
      *
      * 规则：
-     * - PUBLIC 空间所有人可读
-     * - 未登录用户只能看 PUBLIC
-     * - 已登录用户可看 PUBLIC + 自己拥有的 + 自己加入的
+     * - PUBLIC 空间 → 所有登录用户可见
+     * - OWNER 的空间 → 全部可见
+     * - TEAM 空间 → 部门匹配
+     * - PRIVATE 空间 → 显式成员
+     *
+     * 前置条件：userId 非空（前端强制登录，AuthInterceptor 保证）
      */
     public List<Long> getAccessibleSpaceIds(Long userId) {
-        // 1. 所有 PUBLIC 空间
         List<Space> allSpaces = spaceMapper.selectList(null);
-        List<Long> ids = new java.util.ArrayList<>();
+        List<Long> ids = new ArrayList<>();
+        Long userDeptId = getUserDepartmentId(userId);
+
         for (Space s : allSpaces) {
+            // 1. PUBLIC → 所有登录用户
             if ("PUBLIC".equals(s.getVisibility())) {
                 ids.add(s.getId());
+                continue;
             }
-        }
 
-        // 2. 未登录 → 只看 PUBLIC
-        if (userId == null) return ids;
-
-        // 3. 已登录 → 自己的空间 + 加入的空间
-        for (Space s : allSpaces) {
-            if (s.getOwnerId().equals(userId) && !ids.contains(s.getId())) {
+            // 2. OWNER → 自己的空间全部可见
+            if (s.getOwnerId().equals(userId)) {
                 ids.add(s.getId());
+                continue;
             }
-        }
 
-        // 4. 加入的成员空间
-        List<SpaceMember> memberships = memberMapper.selectList(
-                new LambdaQueryWrapper<SpaceMember>().eq(SpaceMember::getUserId, userId));
-        for (SpaceMember m : memberships) {
-            if (!ids.contains(m.getSpaceId())) {
-                ids.add(m.getSpaceId());
+            // 3. TEAM → 部门匹配
+            if ("TEAM".equals(s.getVisibility())) {
+                if (userDeptId != null && isInDepartmentScope(s.getDepartmentScope(), userDeptId)) {
+                    ids.add(s.getId());
+                }
+                continue;
+            }
+
+            // 4. PRIVATE → 显式成员
+            if (isMember(s.getId(), userId)) {
+                ids.add(s.getId());
             }
         }
 
         return ids;
     }
 
+    // ==================== 私有辅助方法 ====================
+
     private SpaceMember getMember(Long spaceId, Long userId) {
         return memberMapper.selectOne(new LambdaQueryWrapper<SpaceMember>()
                 .eq(SpaceMember::getSpaceId, spaceId)
                 .eq(SpaceMember::getUserId, userId));
+    }
+
+    private boolean isMember(Long spaceId, Long userId) {
+        return getMember(spaceId, userId) != null;
+    }
+
+    /** 获取用户的系统角色（从 kb_sys_user 表） */
+    private String getUserRole(Long userId) {
+        SysUser user = userMapper.selectById(userId);
+        return user != null ? user.getRole() : null;
+    }
+
+    /** 获取用户的部门 ID */
+    private Long getUserDepartmentId(Long userId) {
+        SysUser user = userMapper.selectById(userId);
+        return user != null ? user.getDepartmentId() : null;
+    }
+
+    /**
+     * 检查用户部门是否在空间的部门可见范围内
+     * departmentScope 格式："1,2,5"（逗号分隔的部门 ID）
+     */
+    private boolean isInDepartmentScope(String departmentScope, Long userDeptId) {
+        if (departmentScope == null || departmentScope.isBlank()) return false;
+        return Arrays.stream(departmentScope.split(","))
+                .map(String::trim)
+                .anyMatch(id -> id.equals(String.valueOf(userDeptId)));
     }
 }

@@ -20,14 +20,15 @@ public class SpaceServiceImpl implements SpaceService {
     private final SpaceMapper spaceMapper;
 
     @Override
-    public Space create(String name, String description, Long ownerId, String visibility) {
+    public Space create(String name, String description, Long ownerId, String visibility, String departmentScope) {
         Space space = new Space();
         space.setName(name);
         space.setDescription(description);
         space.setOwnerId(ownerId);
         space.setVisibility(visibility != null ? visibility : "PRIVATE");
+        space.setDepartmentScope(departmentScope);
         spaceMapper.insert(space);
-        log.info("空间创建: id={}, name={}, ownerId={}", space.getId(), name, ownerId);
+        log.info("空间创建: id={}, name={}, ownerId={}, visibility={}", space.getId(), name, ownerId, visibility);
         return space;
     }
 
@@ -49,12 +50,13 @@ public class SpaceServiceImpl implements SpaceService {
     }
 
     @Override
-    public Space update(Long id, String name, String description, String visibility) {
+    public Space update(Long id, String name, String description, String visibility, String departmentScope) {
         Space space = spaceMapper.selectById(id);
         if (space == null) return null;
         if (name != null) space.setName(name);
         if (description != null) space.setDescription(description);
         if (visibility != null) space.setVisibility(visibility);
+        if (departmentScope != null) space.setDepartmentScope(departmentScope);
         spaceMapper.updateById(space);
         log.info("空间更新: id={}", id);
         return space;

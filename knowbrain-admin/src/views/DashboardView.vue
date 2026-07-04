@@ -1,124 +1,87 @@
 <template>
-  <div class="admin-layout">
-    <el-header class="admin-header">
-      <div class="header-left">
-        <h2>KnowBrain 管理后台</h2>
-      </div>
-      <div class="header-right">
-        <span class="user-name">{{ userName }}</span>
-        <el-button text @click="logout">退出</el-button>
-      </div>
-    </el-header>
+  <div>
+    <!-- 操作栏 -->
+    <div class="toolbar">
+      <h3>我的空间</h3>
+      <el-button type="primary" @click="showCreate = true">
+        <el-icon><Plus /></el-icon> 创建空间
+      </el-button>
+    </div>
 
-    <el-container>
-      <el-aside width="220px" class="admin-sidebar">
-        <el-menu :default-active="route.path" router>
-          <el-menu-item index="/dashboard">
-            <el-icon><HomeFilled /></el-icon> 工作台
-          </el-menu-item>
-          <el-menu-item v-if="isAdmin" index="/departments">
-            <el-icon><OfficeBuilding /></el-icon> 部门管理
-          </el-menu-item>
-          <el-menu-item v-if="isAdmin" index="/users">
-            <el-icon><User /></el-icon> 用户管理
-          </el-menu-item>
-        </el-menu>
-      </el-aside>
+    <!-- 空间卡片列表 -->
+    <el-row :gutter="20" v-loading="loading">
+      <el-col v-for="s in spaces" :key="s.id" :xs="24" :sm="12" :md="8" :lg="6">
+        <el-card class="space-card" shadow="hover" @click="goSpace(s.id)">
+          <div class="space-card-header">
+            <el-icon :size="24"><Folder /></el-icon>
+            <el-tag :type="visibilityType(s.visibility)" size="small">
+              {{ visibilityLabel(s.visibility) }}
+            </el-tag>
+          </div>
+          <h4>{{ s.name }}</h4>
+          <p class="space-desc">{{ s.description || '暂无描述' }}</p>
+          <div class="space-meta">
+            <span>{{ s.createTime?.substring(0, 10) }}</span>
+          </div>
+        </el-card>
+      </el-col>
 
-      <el-main class="admin-main">
-        <!-- 操作栏 -->
-        <div class="toolbar">
-          <h3>我的空间</h3>
-          <el-button type="primary" @click="showCreate = true">
-            <el-icon><Plus /></el-icon> 创建空间
-          </el-button>
-        </div>
+      <!-- 空状态 -->
+      <el-col :span="24" v-if="!loading && spaces.length === 0">
+        <el-empty description="暂无空间，点击右上角创建第一个空间">
+          <el-button type="primary" @click="showCreate = true">创建空间</el-button>
+        </el-empty>
+      </el-col>
+    </el-row>
 
-        <!-- 空间卡片列表 -->
-        <el-row :gutter="20" v-loading="loading">
-          <el-col v-for="s in spaces" :key="s.id" :xs="24" :sm="12" :md="8" :lg="6">
-            <el-card class="space-card" shadow="hover" @click="goSpace(s.id)">
-              <div class="space-card-header">
-                <el-icon :size="24"><Folder /></el-icon>
-                <el-tag :type="visibilityType(s.visibility)" size="small">
-                  {{ visibilityLabel(s.visibility) }}
-                </el-tag>
-              </div>
-              <h4>{{ s.name }}</h4>
-              <p class="space-desc">{{ s.description || '暂无描述' }}</p>
-              <div class="space-meta">
-                <span>{{ s.createTime?.substring(0, 10) }}</span>
-              </div>
-            </el-card>
-          </el-col>
-
-          <!-- 空状态 -->
-          <el-col :span="24" v-if="!loading && spaces.length === 0">
-            <el-empty description="暂无空间，点击右上角创建第一个空间">
-              <el-button type="primary" @click="showCreate = true">创建空间</el-button>
-            </el-empty>
-          </el-col>
-        </el-row>
-
-        <!-- 创建空间弹窗 -->
-        <el-dialog v-model="showCreate" title="创建空间" width="480px">
-          <el-form :model="createForm" label-position="top">
-            <el-form-item label="空间名称" required>
-              <el-input v-model="createForm.name" placeholder="例如：技术文档库" />
-            </el-form-item>
-            <el-form-item label="描述">
-              <el-input v-model="createForm.description" type="textarea" :rows="2"
-                        placeholder="空间简介" />
-            </el-form-item>
-            <el-form-item label="可见性">
-              <el-radio-group v-model="createForm.visibility">
-                <el-radio value="PRIVATE">私有（仅自己）</el-radio>
-                <el-radio value="TEAM">团队（成员可见）</el-radio>
-                <el-radio value="PUBLIC">公开（所有人）</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item v-if="createForm.visibility === 'TEAM'" label="可见部门">
-              <el-select v-model="createForm.departmentScope" multiple placeholder="选择可见部门" style="width:100%">
-                <el-option v-for="d in allDepartments" :key="d.id" :label="d.name" :value="d.id" />
-              </el-select>
-            </el-form-item>
-          </el-form>
-          <template #footer>
-            <el-button @click="showCreate = false">取消</el-button>
-            <el-button type="primary" :loading="creating" @click="doCreate">创建</el-button>
-          </template>
-        </el-dialog>
-      </el-main>
-    </el-container>
+    <!-- 创建空间弹窗 -->
+    <el-dialog v-model="showCreate" title="创建空间" width="480px">
+      <el-form :model="createForm" label-position="top">
+        <el-form-item label="空间名称" required>
+          <el-input v-model="createForm.name" placeholder="例如：技术文档库" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="createForm.description" type="textarea" :rows="2"
+                    placeholder="空间简介" />
+        </el-form-item>
+        <el-form-item label="可见性">
+          <el-radio-group v-model="createForm.visibility">
+            <el-radio value="PRIVATE">私有（仅自己）</el-radio>
+            <el-radio value="TEAM">团队（成员可见）</el-radio>
+            <el-radio value="PUBLIC">公开（所有人）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="createForm.visibility === 'TEAM'" label="可见部门">
+          <el-select v-model="createForm.departmentScope" multiple placeholder="选择可见部门" style="width:100%">
+            <el-option v-for="d in allDepartments" :key="d.id" :label="d.name" :value="d.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCreate = false">取消</el-button>
+        <el-button type="primary" :loading="creating" @click="doCreate">创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { HomeFilled, Plus, Folder, OfficeBuilding, User } from '@element-plus/icons-vue'
+import { Plus, Folder } from '@element-plus/icons-vue'
 import { listSpaces, createSpace, listDepartments } from '../api'
 
 const router = useRouter()
-const route = useRoute()
 
 const loading = ref(false)
 const spaces = ref<any[]>([])
 const showCreate = ref(false)
 const creating = ref(false)
 const createForm = reactive({ name: '', description: '', visibility: 'PRIVATE', departmentScope: [] as number[] })
-const userName = ref('')
-const isAdmin = ref(false)
 const allDepartments = ref<any[]>([])
 
 onMounted(async () => {
-  const u = localStorage.getItem('kb_user')
-  if (u) {
-    const parsed = JSON.parse(u)
-    userName.value = parsed.name
-    isAdmin.value = parsed.role === 'ADMIN'
-  }
   await loadSpaces()
   const deptRes = await listDepartments()
   allDepartments.value = flatten(deptRes.data?.data || [])
@@ -153,12 +116,6 @@ function goSpace(id: number) {
   router.push(`/spaces/${id}`)
 }
 
-function logout() {
-  localStorage.removeItem('kb_token')
-  localStorage.removeItem('kb_user')
-  router.push('/login')
-}
-
 function flatten(nodes: any[]): any[] {
   let r: any[] = []
   for (const n of nodes) { r.push(n); if (n.children) r = r.concat(flatten(n.children)) }
@@ -174,16 +131,6 @@ function visibilityLabel(v: string) {
 </script>
 
 <style scoped>
-.admin-layout { min-height: 100vh; background: #f5f7fa; }
-.admin-header {
-  display: flex; align-items: center; justify-content: space-between;
-  background: #fff; border-bottom: 1px solid #e4e7ed; padding: 0 24px; height: 56px;
-}
-.admin-header h2 { font-size: 18px; color: #303133; }
-.header-right { display: flex; align-items: center; gap: 12px; }
-.user-name { color: #606266; font-size: 14px; }
-.admin-sidebar { background: #fff; border-right: 1px solid #e4e7ed; min-height: calc(100vh - 56px); }
-.admin-main { padding: 24px; }
 .toolbar {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 24px;

@@ -11,13 +11,26 @@ const router = createRouter({
     },
     {
       path: '/',
-      redirect: '/dashboard'
-    },
-    {
-      path: '/dashboard',
-      name: 'dashboard',
-      component: () => import('../views/DashboardView.vue'),
-      meta: { auth: true }
+      component: () => import('../views/AdminLayout.vue'),
+      meta: { auth: true },
+      children: [
+        { path: '', redirect: '/dashboard' },
+        {
+          path: 'dashboard',
+          name: 'dashboard',
+          component: () => import('../views/DashboardView.vue')
+        },
+        {
+          path: 'departments',
+          name: 'departments',
+          component: () => import('../views/DepartmentView.vue')
+        },
+        {
+          path: 'users',
+          name: 'users',
+          component: () => import('../views/UserView.vue')
+        }
+      ]
     },
     {
       path: '/spaces/:id',
@@ -29,18 +42,6 @@ const router = createRouter({
       path: '/documents/:id',
       name: 'document-preview',
       component: () => import('../views/DocumentPreviewView.vue'),
-      meta: { auth: true }
-    },
-    {
-      path: '/departments',
-      name: 'departments',
-      component: () => import('../views/DepartmentView.vue'),
-      meta: { auth: true }
-    },
-    {
-      path: '/users',
-      name: 'users',
-      component: () => import('../views/UserView.vue'),
       meta: { auth: true }
     }
   ]

@@ -1,13 +1,8 @@
 <template>
-  <div class="admin-layout">
-    <el-header class="admin-header">
-      <div class="header-left">
-        <el-button text @click="$router.push('/dashboard')">
-          <el-icon><ArrowLeft /></el-icon> 返回
-        </el-button>
-        <h2>部门管理</h2>
-      </div>
-    </el-header>
+  <div class="dept-page">
+    <div class="toolbar">
+      <h3>部门管理</h3>
+    </div>
     <el-container>
       <el-aside width="280px" class="dept-sidebar">
         <div class="dept-tree-header">
@@ -49,7 +44,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
 import { listDepartments, createDepartment, updateDepartment, deleteDepartment } from '../api'
 
 const tree = ref<any[]>([])
@@ -106,3 +100,12 @@ async function remove() {
   refresh()
 }
 </script>
+
+<style scoped>
+.dept-page { background: #fff; border-radius: 6px; padding: 0; }
+.toolbar { padding: 16px 20px 0; }
+.toolbar h3 { font-size: 18px; color: #303133; }
+.dept-sidebar { background: #fafafa; border-right: 1px solid #e4e7ed; min-height: calc(100vh - 160px); padding: 16px; }
+.dept-tree-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.dept-tree-header h4 { font-size: 14px; color: #303133; }
+</style>

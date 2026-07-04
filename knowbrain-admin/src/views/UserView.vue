@@ -1,14 +1,5 @@
 <template>
-  <div class="admin-layout">
-    <el-header class="admin-header">
-      <div class="header-left">
-        <el-button text @click="$router.push('/dashboard')">
-          <el-icon><ArrowLeft /></el-icon> 返回
-        </el-button>
-        <h2>用户管理</h2>
-      </div>
-    </el-header>
-    <el-main>
+  <div class="user-page">
       <!-- 工具栏：筛选 + 新建 -->
       <div class="toolbar">
         <div class="toolbar-left">
@@ -168,14 +159,13 @@
           <el-button type="primary" @click="doReset" :loading="submitting">确认重置</el-button>
         </template>
       </el-dialog>
-    </el-main>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus } from '@element-plus/icons-vue'
+import { Plus } from '@element-plus/icons-vue'
 import { listUsers, createUser, updateUser, resetPassword, listDepartments } from '../api'
 
 // ================== 数据 ==================
@@ -345,11 +335,7 @@ async function doReset() {
 </script>
 
 <style scoped>
-.admin-layout { display: flex; flex-direction: column; height: 100vh; background: #f5f7fa; }
-.admin-header { display: flex; align-items: center; background: #fff; border-bottom: 1px solid #e4e7ed; padding: 0 24px; height: 56px; }
-.header-left { display: flex; align-items: center; gap: 12px; }
-.header-left h2 { font-size: 18px; font-weight: 600; }
-
-.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding: 16px; background: #fff; border-radius: 6px; }
+.user-page { background: #fff; border-radius: 6px; padding: 16px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .toolbar-left { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 </style>

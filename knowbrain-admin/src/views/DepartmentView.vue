@@ -2,44 +2,45 @@
   <div class="admin-layout">
     <el-header class="admin-header">
       <div class="header-left">
-        <h2>KnowBrain 管理后台</h2>
-      </div>
-      <div class="header-right">
-        <span class="user-name">{{ userName }}</span>
-        <el-button text @click="logout">退出</el-button>
+        <el-button text @click="$router.push('/dashboard')">
+          <el-icon><ArrowLeft /></el-icon> 返回
+        </el-button>
+        <h2>部门管理</h2>
       </div>
     </el-header>
-
     <el-container>
-      <el-aside width="220px" class="admin-sidebar">
-        <el-menu :default-active="route.path" router>
-          <el-menu-item index="/dashboard">
-            <el-icon><HomeFilled /></el-icon> 工作台
-          </el-menu-item>
-          <el-menu-item v-if="isAdmin" index="/departments">
-            <el-icon><OfficeBuilding /></el-icon> 部门管理
-          </el-menu-item>
-          <el-menu-item v-if="isAdmin" index="/users">
-            <el-icon><User /></el-icon> 用户管理
-          </el-menu-item>
-        </el-menu>
+      <el-aside width="280px" class="dept-sidebar">
+        <div class="dept-tree-header">
+          <h4>部门树</h4>
+          <el-button type="primary" size="small" @click="addRoot">新增</el-button>
+        </div>
+        <el-tree
+          :data="tree"
+          :props="{ children: 'children', label: 'name' }"
+          node-key="id"
+          highlight-current
+          @node-click="onSelect"
+        />
       </el-aside>
-
-      <el-main class="admin-main">
-        <h3>部门管理</h3>
-        <p style="color: #909399; margin-bottom: 16px;">管理组织部门结构</p>
-
-        <el-table :data="departments" v-loading="loading" stripe style="width: 100%">
-          <el-table-column prop="id" label="ID" width="80" />
-          <el-table-column prop="name" label="部门名称" />
-          <el-table-column prop="description" label="描述" />
-          <el-table-column label="操作" width="200">
-            <template #default="scope">
-              <el-button size="small" text @click="edit(scope.row)">编辑</el-button>
-              <el-button size="small" text type="danger" @click="remove(scope.row)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+      <el-main>
+        <el-form v-if="selected" :model="form" label-width="100px">
+          <el-form-item label="部门名称" required>
+            <el-input v-model="form.name" />
+          </el-form-item>
+          <el-form-item label="上级部门">
+            <el-select v-model="form.parentId" clearable placeholder="顶级部门">
+              <el-option v-for="d in flatList" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="排序">
+            <el-input-number v-model="form.sortOrder" :min="0" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="save">保存</el-button>
+            <el-button type="danger" @click="remove" :disabled="!selected.id">删除</el-button>
+          </el-form-item>
+        </el-form>
+        <el-empty v-else description="请从左侧选择部门" />
       </el-main>
     </el-container>
   </div>
@@ -47,61 +48,61 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { HomeFilled, OfficeBuilding, User } from '@element-plus/icons-vue'
-import { listDepartments } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
+import { listDepartments, createDepartment, updateDepartment, deleteDepartment } from '../api'
 
-const route = useRoute()
-const router = useRouter()
+const tree = ref<any[]>([])
+const flatList = ref<any[]>([])
+const selected = ref<any>(null)
+const form = ref({ name: '', parentId: null as number | null, sortOrder: 0 })
 
-const departments = ref<any[]>([])
-const loading = ref(false)
-const userName = ref('')
-const isAdmin = ref(false)
+onMounted(refresh)
 
-onMounted(async () => {
-  const u = localStorage.getItem('kb_user')
-  if (u) {
-    const parsed = JSON.parse(u)
-    userName.value = parsed.name
-    isAdmin.value = parsed.role === 'ADMIN'
+async function refresh() {
+  const res = await listDepartments()
+  tree.value = res.data?.data || []
+  flatList.value = flatten(tree.value)
+}
+
+function flatten(nodes: any[]): any[] {
+  let result: any[] = []
+  for (const n of nodes) {
+    result.push({ id: n.id, name: n.name })
+    if (n.children) result = result.concat(flatten(n.children))
   }
-  await load()
-})
-
-async function load() {
-  loading.value = true
-  try {
-    const res = await listDepartments()
-    departments.value = res.data?.data || []
-  } catch { departments.value = [] }
-  finally { loading.value = false }
+  return result
 }
 
-function edit(row: any) {
-  // TODO: implement edit
+function onSelect(node: any) {
+  selected.value = node
+  form.value = { name: node.name, parentId: node.parentId || null, sortOrder: node.sortOrder || 0 }
 }
 
-function remove(row: any) {
-  // TODO: implement remove
+function addRoot() {
+  selected.value = { id: null }
+  form.value = { name: '', parentId: null, sortOrder: 0 }
 }
 
-function logout() {
-  localStorage.removeItem('kb_token')
-  localStorage.removeItem('kb_user')
-  router.push('/login')
+async function save() {
+  if (!form.value.name.trim()) return ElMessage.warning('请输入部门名称')
+  const data = { ...form.value, parentId: form.value.parentId || 0 }
+  if (selected.value.id) {
+    await updateDepartment(selected.value.id, data)
+    ElMessage.success('更新成功')
+  } else {
+    await createDepartment(data)
+    ElMessage.success('创建成功')
+  }
+  selected.value = null
+  refresh()
+}
+
+async function remove() {
+  await ElMessageBox.confirm('确定删除该部门？', '提示', { type: 'warning' })
+  await deleteDepartment(selected.value.id)
+  ElMessage.success('删除成功')
+  selected.value = null
+  refresh()
 }
 </script>
-
-<style scoped>
-.admin-layout { min-height: 100vh; background: #f5f7fa; }
-.admin-header {
-  display: flex; align-items: center; justify-content: space-between;
-  background: #fff; border-bottom: 1px solid #e4e7ed; padding: 0 24px; height: 56px;
-}
-.admin-header h2 { font-size: 18px; color: #303133; }
-.header-right { display: flex; align-items: center; gap: 12px; }
-.user-name { color: #606266; font-size: 14px; }
-.admin-sidebar { background: #fff; border-right: 1px solid #e4e7ed; min-height: calc(100vh - 56px); }
-.admin-main { padding: 24px; }
-</style>

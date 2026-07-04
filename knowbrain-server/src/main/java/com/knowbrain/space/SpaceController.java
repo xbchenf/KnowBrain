@@ -2,7 +2,6 @@ package com.knowbrain.space;
 
 import com.knowbrain.common.Result;
 import com.knowbrain.permission.PermissionService;
-import com.knowbrain.permission.SpaceMember;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 空间管理控制器
@@ -28,16 +28,24 @@ public class SpaceController {
 
     @Operation(summary = "创建空间")
     @PostMapping
-    public Result<Space> create(@RequestBody Map<String, String> request,
+    public Result<Space> create(@RequestBody Map<String, Object> request,
                                  HttpServletRequest servletRequest) {
-        String name = request.get("name");
+        String name = (String) request.get("name");
         if (name == null || name.isBlank()) {
             return Result.badRequest("空间名称不能为空");
         }
         Long userId = getUserId(servletRequest);
-        String desc = request.getOrDefault("description", "");
-        String visibility = request.getOrDefault("visibility", "PRIVATE");
-        Space space = spaceService.create(name, desc, userId, visibility);
+        String desc = (String) request.getOrDefault("description", "");
+        String visibility = (String) request.getOrDefault("visibility", "PRIVATE");
+        // departmentScope 数组 → 逗号分隔字符串
+        String departmentScope = null;
+        Object deptScopeObj = request.get("departmentScope");
+        if (deptScopeObj instanceof List<?> list && !list.isEmpty()) {
+            departmentScope = list.stream()
+                    .map(Object::toString)
+                    .collect(Collectors.joining(","));
+        }
+        Space space = spaceService.create(name, desc, userId, visibility, departmentScope);
         return Result.ok("创建成功", space);
     }
 
@@ -62,14 +70,23 @@ public class SpaceController {
     @Operation(summary = "更新空间信息")
     @PutMapping("/{id}")
     public Result<Space> update(@PathVariable Long id,
-                                 @RequestBody Map<String, String> request,
+                                 @RequestBody Map<String, Object> request,
                                  HttpServletRequest req) {
         Long userId = getUserId(req);
         permissionService.checkOwnerAccess(id, userId);
+        // departmentScope 数组 → 逗号分隔字符串
+        String departmentScope = null;
+        Object deptScopeObj = request.get("departmentScope");
+        if (deptScopeObj instanceof List<?> list && !list.isEmpty()) {
+            departmentScope = list.stream()
+                    .map(Object::toString)
+                    .collect(Collectors.joining(","));
+        }
         Space space = spaceService.update(id,
-                request.get("name"),
-                request.get("description"),
-                request.get("visibility"));
+                (String) request.get("name"),
+                (String) request.get("description"),
+                (String) request.get("visibility"),
+                departmentScope);
         return Result.ok("更新成功", space);
     }
 
@@ -86,9 +103,13 @@ public class SpaceController {
 
     @Operation(summary = "空间成员列表")
     @GetMapping("/{id}/members")
-    public Result<List<SpaceMember>> members(@PathVariable Long id, HttpServletRequest req) {
+    public Result<Object> members(@PathVariable Long id, HttpServletRequest req) {
         Long userId = getUserId(req);
         permissionService.checkReadAccess(id, userId);
+        Space space = spaceService.getById(id);
+        if ("PUBLIC".equals(space.getVisibility()) || "TEAM".equals(space.getVisibility())) {
+            return Result.fail(400, "PUBLIC 和 TEAM 空间无需管理成员");
+        }
         return Result.ok(permissionService.listMembers(id));
     }
 
@@ -99,6 +120,10 @@ public class SpaceController {
                                    HttpServletRequest req) {
         Long userId = getUserId(req);
         permissionService.checkOwnerAccess(id, userId);
+        Space space = spaceService.getById(id);
+        if ("PUBLIC".equals(space.getVisibility()) || "TEAM".equals(space.getVisibility())) {
+            return Result.fail(400, "PUBLIC 和 TEAM 空间无需管理成员");
+        }
         Long memberUserId = Long.valueOf(body.get("userId").toString());
         String role = body.getOrDefault("role", "VIEWER").toString();
         permissionService.addMember(id, memberUserId, role);
@@ -112,6 +137,10 @@ public class SpaceController {
                                       HttpServletRequest req) {
         Long userId = getUserId(req);
         permissionService.checkOwnerAccess(id, userId);
+        Space space = spaceService.getById(id);
+        if ("PUBLIC".equals(space.getVisibility()) || "TEAM".equals(space.getVisibility())) {
+            return Result.fail(400, "PUBLIC 和 TEAM 空间无需管理成员");
+        }
         permissionService.removeMember(id, memberUserId);
         return Result.ok("移除成功", null);
     }

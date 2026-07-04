@@ -27,8 +27,11 @@ public class SysUser {
     /** 手机号 */
     private String phone;
 
-    /** 角色：USER / ADMIN */
+    /** 角色：USER / MANAGER / ADMIN */
     private String role;
+
+    /** 所属部门 ID */
+    private Long departmentId;
 
     /** 状态：ACTIVE / DISABLED */
     private String status;

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 部门 — kb_department
@@ -33,4 +34,8 @@ public class Department {
 
     @TableLogic
     private Integer deleted;
+
+    /** 子部门列表（非数据库字段，仅用于树形返回） */
+    @TableField(exist = false)
+    private List<Department> children;
 }

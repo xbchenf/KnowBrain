@@ -1,10 +1,10 @@
 <template>
   <div class="admin-layout">
-    <!-- 暗色侧边栏 -->
+    <!-- 亮色侧边栏 -->
     <aside class="admin-sidebar">
       <div class="sidebar-logo">
         <div class="logo-icon">
-          <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
+          <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
             <rect width="48" height="48" rx="12" fill="#409EFF"/>
             <path d="M14 20c0-3.3 2.7-6 6-6h2c1.1 0 2 .9 2 2s-.9 2-2 2h-2c-1.1 0-2 .9-2 2s.9 2 2 2h8c3.3 0 6 2.7 6 6s-2.7 6-6 6h-2c-1.1 0-2-.9-2-2s.9-2 2-2h2c1.1 0 2-.9 2-2s-.9-2-2-2h-8c-3.3 0-6-2.7-6-6z" fill="white"/>
           </svg>
@@ -99,46 +99,46 @@ function logout() {
 
 <style scoped>
 /* ===== 整体布局 ===== */
-.admin-layout { display: flex; min-height: 100vh; background: #f0f2f5; }
+.admin-layout { display: flex; min-height: 100vh; background: #f5f7fa; }
 
-/* ===== 暗色侧边栏 ===== */
+/* ===== 亮色侧边栏 ===== */
 .admin-sidebar {
-  width: 220px; background: #1e293b; display: flex; flex-direction: column;
-  flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
+  width: 220px; background: #fff; border-right: 1px solid #e4e7ed;
+  display: flex; flex-direction: column; flex-shrink: 0; position: fixed;
+  top: 0; left: 0; bottom: 0; z-index: 100;
 }
 .sidebar-logo {
-  padding: 18px 20px; display: flex; align-items: center; gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
+  padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px;
 }
 .logo-icon { display: flex; align-items: center; }
-.sidebar-logo h1 { font-size: 16px; color: #fff; font-weight: 700; letter-spacing: -.3px; }
+.sidebar-logo h1 { font-size: 17px; color: #303133; font-weight: 700; letter-spacing: -.3px; }
 
 /* 导航 */
-.sidebar-nav { flex: 1; padding: 12px 10px; overflow-y: auto; }
+.sidebar-nav { flex: 1; padding: 4px 12px; overflow-y: auto; }
 .nav-group-label {
-  font-size: 10px; color: rgba(255,255,255,.25); text-transform: uppercase;
-  letter-spacing: 1px; padding: 16px 10px 6px; font-weight: 600;
+  font-size: 11px; color: #909399; padding: 16px 10px 6px; font-weight: 600; letter-spacing: .5px;
 }
 .nav-item {
-  display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 6px;
-  color: #94a3b8; font-size: 13px; text-decoration: none; transition: all .12s; margin-bottom: 1px;
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
+  color: #606266; font-size: 14px; text-decoration: none; transition: all .12s; margin-bottom: 1px;
 }
-.nav-item:hover { background: rgba(255,255,255,.06); color: #cbd5e1; }
-.nav-item.active { background: #409EFF; color: #fff; }
-.nav-item.active svg { opacity: 1; }
-.nav-item svg { opacity: .5; flex-shrink: 0; }
+.nav-item:hover { background: #f5f7fa; color: #303133; }
+.nav-item.active { background: #ecf5ff; color: #409EFF; font-weight: 500; }
+.nav-item.active svg { color: #409EFF; }
+.nav-item svg { flex-shrink: 0; }
 
 /* 用户卡片 */
-.sidebar-footer { padding: 12px; border-top: 1px solid rgba(255,255,255,.06); }
+.sidebar-footer { padding: 12px 16px; border-top: 1px solid #f0f0f0; }
 .user-card { display: flex; align-items: center; gap: 10px; }
 .user-avatar {
-  width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #409EFF, #67c23a);
-  color: #fff; display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%; color: #fff;
+  background: linear-gradient(135deg, #409EFF, #67c23a);
+  display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 600; flex-shrink: 0;
 }
 .user-meta { min-width: 0; }
-.user-name { font-size: 13px; color: #e2e8f0; font-weight: 500; }
-.user-role { font-size: 11px; color: rgba(255,255,255,.3); }
+.user-name { font-size: 13px; color: #303133; font-weight: 500; }
+.user-role { font-size: 11px; color: #909399; }
 
 /* ===== 主区域 ===== */
 .main-area { flex: 1; margin-left: 220px; display: flex; flex-direction: column; min-height: 100vh; }

@@ -5,7 +5,7 @@
       <div class="sidebar-header">
         <div class="logo" @click="startNewChat">
           <svg width="24" height="24" viewBox="0 0 48 48" fill="none">
-            <rect width="48" height="48" rx="12" fill="#10a37f"/>
+            <rect width="48" height="48" rx="12" fill="#409EFF"/>
             <path d="M14 20c0-3.3 2.7-6 6-6h2c1.1 0 2 .9 2 2s-.9 2-2 2h-2c-1.1 0-2 .9-2 2s.9 2 2 2h8c3.3 0 6 2.7 6 6s-2.7 6-6 6h-2c-1.1 0-2-.9-2-2s.9-2 2-2h2c1.1 0 2-.9 2-2s-.9-2-2-2h-8c-3.3 0-6-2.7-6-6z" fill="white"/>
           </svg>
           <span>KnowBrain</span>
@@ -143,10 +143,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .upload-entry {
   justify-content: flex-start; gap: 6px; font-size: 12px; color: #666; padding: 6px 8px;
 }
-.upload-entry:hover { color: #10a37f; }
+.upload-entry:hover { color: #409EFF; }
 .user-info { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .user-avatar {
-  width: 28px; height: 28px; border-radius: 50%; background: #10a37f;
+  width: 28px; height: 28px; border-radius: 50%; background: #409EFF;
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 600;
 }

@@ -6,7 +6,7 @@
       <div v-if="messages.length === 0" class="welcome">
         <div class="welcome-logo">
           <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-            <rect width="48" height="48" rx="12" fill="#10a37f"/>
+            <rect width="48" height="48" rx="12" fill="#409EFF"/>
             <path d="M14 20c0-3.3 2.7-6 6-6h2c1.1 0 2 .9 2 2s-.9 2-2 2h-2c-1.1 0-2 .9-2 2s.9 2 2 2h8c3.3 0 6 2.7 6 6s-2.7 6-6 6h-2c-1.1 0-2-.9-2-2s.9-2 2-2h2c1.1 0 2-.9 2-2s-.9-2-2-2h-8c-3.3 0-6-2.7-6-6z" fill="white"/>
           </svg>
         </div>
@@ -34,7 +34,7 @@
           <div class="msg-ai-wrap">
             <div class="msg-ai-avatar">
               <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
-                <rect width="48" height="48" rx="12" fill="#10a37f"/>
+                <rect width="48" height="48" rx="12" fill="#409EFF"/>
                 <path d="M14 20c0-3.3 2.7-6 6-6h2c1.1 0 2 .9 2 2s-.9 2-2 2h-2c-1.1 0-2 .9-2 2s.9 2 2 2h8c3.3 0 6 2.7 6 6s-2.7 6-6 6h-2c-1.1 0-2-.9-2-2s.9-2 2-2h2c1.1 0 2-.9 2-2s-.9-2-2-2h-8c-3.3 0-6-2.7-6-6z" fill="white"/>
               </svg>
             </div>
@@ -95,7 +95,7 @@
         <div class="msg-ai-wrap">
           <div class="msg-ai-avatar">
             <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
-              <rect width="48" height="48" rx="12" fill="#10a37f"/>
+              <rect width="48" height="48" rx="12" fill="#409EFF"/>
               <path d="M14 20c0-3.3 2.7-6 6-6h2c1.1 0 2 .9 2 2s-.9 2-2 2h-2c-1.1 0-2 .9-2 2s.9 2 2 2h8c3.3 0 6 2.7 6 6s-2.7 6-6 6h-2c-1.1 0-2-.9-2-2s.9-2 2-2h2c1.1 0 2-.9 2-2s-.9-2-2-2h-8c-3.3 0-6-2.7-6-6z" fill="white"/>
             </svg>
           </div>
@@ -275,7 +275,7 @@ defineExpose({ addSystemMessage })
   padding: 8px 16px; border: 1px solid #e5e5e5; border-radius: 20px; font-size: 13px;
   color: #666; cursor: pointer; background: #fff; transition: all .15s; font-family: inherit;
 }
-.suggestion-chip:hover { border-color: #10a37f; color: #10a37f; background: #f0fdf6; }
+.suggestion-chip:hover { border-color: #409EFF; color: #409EFF; background: #f0fdf6; }
 
 /* ===== 消息行 ===== */
 .msg-row { max-width: 800px; margin: 0 auto; padding: 16px 0; }
@@ -291,9 +291,9 @@ defineExpose({ addSystemMessage })
 .msg-ai-content { flex: 1; min-width: 0; }
 .msg-ai-text { font-size: 14px; line-height: 1.75; color: #1a1a1a; word-break: break-word; }
 .msg-ai-text :deep(p) { margin-bottom: 8px; }
-.msg-ai-text :deep(.inline-cite) { color: #10a37f; font-weight: 500; font-size: 12px; }
+.msg-ai-text :deep(.inline-cite) { color: #409EFF; font-weight: 500; font-size: 12px; }
 
-.cursor-blink { display: inline; animation: blink .7s infinite; color: #10a37f; font-weight: 700; }
+.cursor-blink { display: inline; animation: blink .7s infinite; color: #409EFF; font-weight: 700; }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
 /* ===== 加载动画 ===== */
@@ -316,17 +316,17 @@ defineExpose({ addSystemMessage })
   display: flex; gap: 10px; padding: 10px 12px; background: #f9fafb;
   border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; transition: border-color .15s;
 }
-.source-card:hover { border-color: #10a37f; }
+.source-card:hover { border-color: #409EFF; }
 .source-card-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 .source-card-body { min-width: 0; }
-.source-card-title { font-size: 12px; font-weight: 600; color: #10a37f; margin-bottom: 2px; }
+.source-card-title { font-size: 12px; font-weight: 600; color: #409EFF; margin-bottom: 2px; }
 .source-card-text { font-size: 12px; color: #666; line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 /* ===== 消息操作栏 ===== */
 .msg-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 .msg-actions-left { display: flex; align-items: center; }
 .confidence { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
-.conf-high { background: #ecfdf5; color: #059669; }
+.conf-high { background: #ecf5ff; color: #059669; }
 .conf-medium { background: #fffbeb; color: #b45309; }
 .conf-low { background: #f3f4f6; color: #6b7280; }
 .msg-actions-right { display: flex; gap: 4px; }
@@ -336,7 +336,7 @@ defineExpose({ addSystemMessage })
   transition: background .12s; opacity: .4;
 }
 .action-btn:hover { background: #f3f4f6; opacity: .8; }
-.action-btn.active { opacity: 1; background: #ecfdf5; }
+.action-btn.active { opacity: 1; background: #ecf5ff; }
 .action-btn:disabled { cursor: default; }
 
 /* ===== 系统消息 ===== */
@@ -353,16 +353,16 @@ defineExpose({ addSystemMessage })
   font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.5;
   background: #f9fafb; transition: all .2s; box-shadow: 0 1px 3px rgba(0,0,0,.03);
 }
-.chat-input:focus { border-color: #10a37f; background: #fff; box-shadow: 0 0 0 3px rgba(16,163,127,.08); }
+.chat-input:focus { border-color: #409EFF; background: #fff; box-shadow: 0 0 0 3px rgba(64,158,255,.15); }
 .chat-input:disabled { opacity: .6; }
 .send-btn {
   position: absolute; right: 6px; bottom: 6px; width: 32px; height: 32px; border-radius: 8px;
-  background: #10a37f; color: #fff; border: none; cursor: pointer; display: flex;
+  background: #409EFF; color: #fff; border: none; cursor: pointer; display: flex;
   align-items: center; justify-content: center; opacity: 0; transform: scale(.8);
   transition: all .15s; pointer-events: none;
 }
 .send-btn.visible { opacity: 1; transform: scale(1); pointer-events: auto; }
-.send-btn:hover { background: #0d8c6d; }
+.send-btn:hover { background: #3370cc; }
 .send-btn svg { transform: rotate(-90deg); }
 .input-footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 8px; }
 </style>

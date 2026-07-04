@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Reading, Upload } from '@element-plus/icons-vue'
 import ChatView from './views/ChatView.vue'
 import UploadDialog from './components/UploadDialog.vue'
@@ -41,6 +41,13 @@ function onUploaded(doc: any) {
     chatViewRef.value.addSystemMessage(`文档「${doc.data.title || doc.data.fileName}」已上传并解析完成，可以开始提问了`)
   }
 }
+
+onMounted(() => {
+  const token = localStorage.getItem('kb_token')
+  if (!token) {
+    window.location.href = '/admin/login'
+  }
+})
 </script>
 
 <style>

@@ -74,6 +74,14 @@ public class AuthController {
         String password = request.get("password");
         String name = request.getOrDefault("name", username);
         String phone = request.getOrDefault("phone", "");
+        Long departmentId = null;
+        if (request.containsKey("departmentId") && request.get("departmentId") != null) {
+            try {
+                departmentId = Long.valueOf(request.get("departmentId").toString());
+            } catch (NumberFormatException ignored) {
+                // 非法值忽略，保持 null
+            }
+        }
 
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             return Result.badRequest("用户名和密码不能为空");
@@ -95,6 +103,7 @@ public class AuthController {
         user.setName(name);
         user.setPhone(phone);
         user.setRole("USER");
+        user.setDepartmentId(departmentId);
         user.setStatus("ACTIVE");
         userMapper.insert(user);
 

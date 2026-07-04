@@ -30,14 +30,14 @@ public class AuthInterceptor implements HandlerInterceptor {
 
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            write401(response, "未登录或Token已过期");
+            writeJson(response, 401, "未登录或Token已过期");
             return false;
         }
 
         String token = authHeader.substring(7);
         Map<String, Object> claims = jwtUtil.verifyToken(token);
         if (claims == null) {
-            write401(response, "Token无效或已过期");
+            writeJson(response, 401, "Token无效或已过期");
             return false;
         }
 
@@ -45,12 +45,23 @@ public class AuthInterceptor implements HandlerInterceptor {
         request.setAttribute("userId", claims.get("userId"));
         request.setAttribute("username", claims.get("username"));
         request.setAttribute("role", claims.get("role"));
+
+        // /api/v1/admin/** 仅 ADMIN 角色可访问
+        String path = request.getRequestURI();
+        if (path.startsWith("/api/v1/admin/")) {
+            String role = (String) claims.get("role");
+            if (!"ADMIN".equals(role)) {
+                writeJson(response, 403, "需要系统管理员权限");
+                return false;
+            }
+        }
+
         return true;
     }
 
-    private void write401(HttpServletResponse response, String message) throws Exception {
-        response.setStatus(401);
+    private void writeJson(HttpServletResponse response, int status, String message) throws Exception {
+        response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"code\":401,\"message\":\"" + message + "\"}");
+        response.getWriter().write("{\"code\":" + status + ",\"message\":\"" + message + "\"}");
     }
 }

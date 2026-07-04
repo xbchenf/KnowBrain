@@ -1,6 +1,5 @@
 package com.knowbrain.retrieval.engine;
 
-import com.knowbrain.auth.JwtUtil;
 import com.knowbrain.common.Result;
 import com.knowbrain.permission.PermissionService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,7 +28,6 @@ public class RAGController {
 
     private final RAGService ragService;
     private final PermissionService permissionService;
-    private final JwtUtil jwtUtil;
 
     /**
      * RAG 问答：检索 + 生成（带空间权限过滤）
@@ -157,19 +155,8 @@ public class RAGController {
     }
 
     private Long extractUserId(HttpServletRequest request) {
-        // 尝试从 request attribute 获取（AuthInterceptor 注入的）
         Object uid = request.getAttribute("userId");
         if (uid instanceof Number n) return n.longValue();
-
-        // 降级：手动解析 Authorization Header
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            Map<String, Object> claims = jwtUtil.verifyToken(authHeader.substring(7));
-            if (claims != null && claims.get("userId") != null) {
-                return ((Number) claims.get("userId")).longValue();
-            }
-        }
-
-        return null; // 未登录
+        throw new IllegalStateException("未登录用户不应到达此处（AuthInterceptor 拦截）");
     }
 }

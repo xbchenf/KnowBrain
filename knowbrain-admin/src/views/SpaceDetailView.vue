@@ -19,7 +19,7 @@
           <el-menu-item index="docs">
             <el-icon><Document /></el-icon> 文档列表
           </el-menu-item>
-          <el-menu-item index="members">
+          <el-menu-item index="members" v-if="space.visibility === 'PRIVATE'">
             <el-icon><User /></el-icon> 成员管理
           </el-menu-item>
           <el-menu-item index="settings" v-if="isOwner">
@@ -168,7 +168,7 @@ import {
 } from '@element-plus/icons-vue'
 import {
   getSpace, listMembers, addMember, removeMember,
-  updateSpace, deleteSpace, uploadDocument, getDocument, deleteDocument
+  updateSpace, deleteSpace, uploadDocument, listDocuments, deleteDocument
 } from '../api'
 
 const route = useRoute()
@@ -222,9 +222,8 @@ async function loadSpace() {
 async function loadDocuments() {
   loading.value = true
   try {
-    const res = await getSpace(spaceId)
-    // 文档通过空间详情获取，简化处理
-    documents.value = []
+    const res = await listDocuments(spaceId, 1, 100)
+    documents.value = res.data?.data?.records || []
   } catch { documents.value = [] }
   finally { loading.value = false }
 }

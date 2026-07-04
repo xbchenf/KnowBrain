@@ -77,6 +77,11 @@
                 <el-radio value="PUBLIC">公开（所有人）</el-radio>
               </el-radio-group>
             </el-form-item>
+            <el-form-item v-if="createForm.visibility === 'TEAM'" label="可见部门">
+              <el-select v-model="createForm.departmentScope" multiple placeholder="选择可见部门" style="width:100%">
+                <el-option v-for="d in allDepartments" :key="d.id" :label="d.name" :value="d.id" />
+              </el-select>
+            </el-form-item>
           </el-form>
           <template #footer>
             <el-button @click="showCreate = false">取消</el-button>
@@ -93,7 +98,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { HomeFilled, Plus, Folder, OfficeBuilding, User } from '@element-plus/icons-vue'
-import { listSpaces, createSpace } from '../api'
+import { listSpaces, createSpace, listDepartments } from '../api'
 
 const router = useRouter()
 const route = useRoute()
@@ -102,9 +107,10 @@ const loading = ref(false)
 const spaces = ref<any[]>([])
 const showCreate = ref(false)
 const creating = ref(false)
-const createForm = reactive({ name: '', description: '', visibility: 'PRIVATE' })
+const createForm = reactive({ name: '', description: '', visibility: 'PRIVATE', departmentScope: [] as number[] })
 const userName = ref('')
 const isAdmin = ref(false)
+const allDepartments = ref<any[]>([])
 
 onMounted(async () => {
   const u = localStorage.getItem('kb_user')
@@ -114,6 +120,8 @@ onMounted(async () => {
     isAdmin.value = parsed.role === 'ADMIN'
   }
   await loadSpaces()
+  const deptRes = await listDepartments()
+  allDepartments.value = flatten(deptRes.data?.data || [])
 })
 
 async function loadSpaces() {
@@ -129,12 +137,13 @@ async function doCreate() {
   if (!createForm.name.trim()) return
   creating.value = true
   try {
-    await createSpace(createForm.name, createForm.description, createForm.visibility)
+    await createSpace(createForm.name, createForm.description, createForm.visibility, createForm.departmentScope)
     ElMessage.success('空间创建成功')
     showCreate.value = false
     createForm.name = ''
     createForm.description = ''
     createForm.visibility = 'PRIVATE'
+    createForm.departmentScope = []
     await loadSpaces()
   } catch { ElMessage.error('创建失败') }
   finally { creating.value = false }
@@ -148,6 +157,12 @@ function logout() {
   localStorage.removeItem('kb_token')
   localStorage.removeItem('kb_user')
   router.push('/login')
+}
+
+function flatten(nodes: any[]): any[] {
+  let r: any[] = []
+  for (const n of nodes) { r.push(n); if (n.children) r = r.concat(flatten(n.children)) }
+  return r
 }
 
 function visibilityType(v: string) {

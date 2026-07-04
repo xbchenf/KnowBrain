@@ -42,8 +42,8 @@ export const listSpaces = (page = 1, size = 20) =>
 export const getSpace = (id: number) =>
   api.get(`/spaces/${id}`)
 
-export const createSpace = (name: string, description: string, visibility: string) =>
-  api.post('/spaces', { name, description, visibility })
+export const createSpace = (name: string, description: string, visibility: string, departmentScope?: number[]) =>
+  api.post('/spaces', { name, description, visibility, departmentScope })
 
 export const updateSpace = (id: number, data: Record<string, string>) =>
   api.put(`/spaces/${id}`, data)

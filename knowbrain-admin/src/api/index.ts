@@ -96,5 +96,11 @@ export const deleteDepartment = (id: number) =>
 export const listUsers = (params: Record<string, any>) =>
   api.get('/admin/users', { params })
 
+export const createUser = (data: Record<string, any>) =>
+  api.post('/admin/users', data)
+
 export const updateUser = (id: number, data: Record<string, any>) =>
   api.put(`/admin/users/${id}`, data)
+
+export const resetPassword = (id: number, password: string) =>
+  api.put(`/admin/users/${id}/reset-password`, { password })

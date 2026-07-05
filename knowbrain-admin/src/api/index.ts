@@ -15,9 +15,15 @@ api.interceptors.request.use(config => {
   return config
 })
 
-// 响应拦截 — 401 跳转登录
+// 响应拦截 — 业务错误统一处理
 api.interceptors.response.use(
-  res => res,
+  res => {
+    // 兜底：即使 HTTP 200，body.code 非 200 也视为错误
+    if (res.data?.code && res.data.code !== 200) {
+      return Promise.reject({ response: { status: res.data.code, data: res.data } })
+    }
+    return res
+  },
   err => {
     if (err.response?.status === 401) {
       localStorage.removeItem('kb_token')

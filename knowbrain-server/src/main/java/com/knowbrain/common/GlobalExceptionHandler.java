@@ -2,6 +2,7 @@ package com.knowbrain.common;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -15,10 +16,10 @@ public class GlobalExceptionHandler {
      * 业务异常
      */
     @ExceptionHandler(BizException.class)
-    @ResponseStatus(HttpStatus.OK)
-    public Result<Void> handleBizException(BizException e) {
+    public ResponseEntity<Result<Void>> handleBizException(BizException e) {
         log.warn("业务异常: code={}, message={}", e.getCode(), e.getMessage());
-        return Result.fail(e.getCode(), e.getMessage());
+        return ResponseEntity.status(e.getCode())
+                .body(Result.fail(e.getCode(), e.getMessage()));
     }
 
     /**

@@ -31,10 +31,6 @@
       </div>
 
       <div class="sidebar-footer">
-        <el-button class="upload-entry" @click="uploadVisible = true" text>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          上传文档
-        </el-button>
         <div class="user-info">
           <div class="user-avatar">{{ userInitial }}</div>
           <span class="user-name">{{ userName }}</span>
@@ -46,20 +42,14 @@
     <main class="main-area">
       <ChatView ref="chatRef" :key="chatKey" />
     </main>
-
-    <!-- 上传弹窗 -->
-    <UploadDialog v-model:visible="uploadVisible" @uploaded="onUploaded" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import ChatView from './views/ChatView.vue'
-import UploadDialog from './components/UploadDialog.vue'
 
-const chatRef = ref()
 const chatKey = ref(0)
-const uploadVisible = ref(false)
 const history = ref<string[]>([])
 const activeIndex = ref(0)
 const userName = ref('用户')
@@ -92,13 +82,6 @@ function startNewChat() {
 function selectChat(i: number) {
   activeIndex.value = i
   // 后续可加载历史对话内容
-}
-
-function onUploaded(doc: any) {
-  uploadVisible.value = false
-  if (chatRef.value) {
-    chatRef.value.addSystemMessage(`文档「${doc.data?.title || doc.data?.fileName}」已上传并解析完成，可以开始提问了`)
-  }
 }
 </script>
 
@@ -139,12 +122,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .chat-list-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
 .chat-list-empty p { font-size: 12px; color: #bbb; }
 
-.sidebar-footer { padding: 12px; border-top: 1px solid #e5e7eb; display: flex; flex-direction: column; gap: 8px; }
-.upload-entry {
-  justify-content: flex-start; gap: 6px; font-size: 12px; color: #666; padding: 6px 8px;
-}
-.upload-entry:hover { color: #409EFF; }
-.user-info { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.sidebar-footer { padding: 12px 16px; border-top: 1px solid #e5e7eb; }
+.user-info { display: flex; align-items: center; gap: 8px; }
 .user-avatar {
   width: 28px; height: 28px; border-radius: 50%; background: #409EFF;
   color: #fff; display: flex; align-items: center; justify-content: center;

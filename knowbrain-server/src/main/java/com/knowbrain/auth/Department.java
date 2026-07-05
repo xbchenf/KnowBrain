@@ -38,4 +38,12 @@ public class Department {
     /** 子部门列表（非数据库字段，仅用于树形返回） */
     @TableField(exist = false)
     private List<Department> children;
+
+    /** 子部门数量（非数据库字段） */
+    @TableField(exist = false)
+    private int childCount;
+
+    /** 部门成员数量（非数据库字段） */
+    @TableField(exist = false)
+    private int memberCount;
 }

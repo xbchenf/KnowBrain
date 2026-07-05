@@ -23,12 +23,23 @@ public class DepartmentService {
     private final SysUserMapper userMapper;
 
     /**
-     * 查询部门树（顶级部门 → 子部门嵌套）
+     * 查询部门树（顶级部门 → 子部门嵌套），含成员数和子部门数统计
      */
     public List<Department> listAsTree() {
         List<Department> all = departmentMapper.selectList(
                 new LambdaQueryWrapper<Department>()
                         .orderByAsc(Department::getSortOrder));
+
+        // 统计每个部门的成员数
+        List<SysUser> users = userMapper.selectList(new LambdaQueryWrapper<>());
+        Map<Long, Long> memberCountMap = users.stream()
+                .filter(u -> u.getDepartmentId() != null)
+                .collect(Collectors.groupingBy(SysUser::getDepartmentId, Collectors.counting()));
+
+        // 填充统计字段
+        for (Department dept : all) {
+            dept.setMemberCount(memberCountMap.getOrDefault(dept.getId(), 0L).intValue());
+        }
 
         // 按 parentId 分组
         Map<Long, List<Department>> childrenMap = all.stream()
@@ -50,6 +61,7 @@ public class DepartmentService {
         List<Department> children = childrenMap.get(parent.getId());
         parent.setChildren(children != null ? children : List.of());
         if (children != null) {
+            parent.setChildCount(children.size());
             for (Department child : children) {
                 attachChildren(child, childrenMap);
             }

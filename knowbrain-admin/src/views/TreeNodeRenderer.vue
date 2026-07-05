@@ -10,6 +10,7 @@
       </span>
       <span class="node-icon">{{ icon }}</span>
       <span class="node-name">{{ node.name }}</span>
+      <span v-if="node.memberCount" class="node-count">{{ node.memberCount }}人</span>
       <span class="node-actions">
         <button class="act" title="添加子部门" @click.stop="$emit('addChild', node)">+</button>
         <button class="act" title="更多" @click.stop="$emit('select', node)">⋯</button>
@@ -66,6 +67,7 @@ const icon = computed(() => icons[props.node.id % icons.length])
 .expand { width: 16px; text-align: center; font-size: 10px; color: #909399; flex-shrink: 0; user-select: none; }
 .node-icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 12px; }
 .node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-count { font-size: 10px; color: #909399; flex-shrink: 0; }
 .node-actions { display: flex; gap: 1px; opacity: 0; transition: opacity .1s; }
 .act {
   width: 20px; height: 20px; border-radius: 4px; border: none; background: transparent;

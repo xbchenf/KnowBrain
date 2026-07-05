@@ -30,11 +30,11 @@
 
         <div v-if="selected.id" class="stat-row">
           <div class="stat-item">
-            <div class="stat-value">{{ childCount(selected) }}</div>
+            <div class="stat-value">{{ selected.childCount ?? 0 }}</div>
             <div class="stat-label">子部门</div>
           </div>
           <div class="stat-item">
-            <div class="stat-value">-</div>
+            <div class="stat-value">{{ selected.memberCount ?? 0 }}</div>
             <div class="stat-label">成员</div>
           </div>
         </div>
@@ -131,10 +131,6 @@ function addChild(parent: any) {
   form.sortOrder = 0
 }
 
-function childCount(node: any): number {
-  return node.children?.length || 0
-}
-
 async function save() {
   if (!form.name.trim()) return ElMessage.warning('请输入部门名称')
   const data = { name: form.name.trim(), parentId: form.parentId || 0, sortOrder: form.sortOrder }
@@ -152,10 +148,15 @@ async function save() {
 async function remove() {
   try { await ElMessageBox.confirm('确定删除该部门？', '提示', { type: 'warning' }) }
   catch { return }
-  await deleteDepartment(selected.value!.id)
-  ElMessage.success('删除成功')
-  selected.value = null
-  refresh()
+  try {
+    await deleteDepartment(selected.value!.id)
+    ElMessage.success('删除成功')
+    selected.value = null
+    refresh()
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '删除失败'
+    ElMessage.error(msg)
+  }
 }
 </script>
 

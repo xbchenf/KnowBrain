@@ -30,8 +30,9 @@ public class DepartmentService {
                 new LambdaQueryWrapper<Department>()
                         .orderByAsc(Department::getSortOrder));
 
-        // 统计每个部门的成员数
-        List<SysUser> users = userMapper.selectList(new LambdaQueryWrapper<>());
+        // 统计每个部门的活跃成员数（排除禁用用户）
+        List<SysUser> users = userMapper.selectList(
+                new LambdaQueryWrapper<SysUser>().eq(SysUser::getStatus, "ACTIVE"));
         Map<Long, Long> memberCountMap = users.stream()
                 .filter(u -> u.getDepartmentId() != null)
                 .collect(Collectors.groupingBy(SysUser::getDepartmentId, Collectors.counting()));

@@ -36,6 +36,10 @@ public class EkDocument {
     /** 上传者用户 ID */
     private Long uploaderId;
 
+    /** 上传者姓名（非数据库字段，查询时填充） */
+    @TableField(exist = false)
+    private String uploaderName;
+
     /** Tika 解析后的完整文本 */
     private String parsedContent;
 

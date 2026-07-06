@@ -1,6 +1,7 @@
 package com.knowbrain.retrieval.engine;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * RAG 检索引擎 — 混合检索 + LLM 生成 + 溯源
@@ -18,14 +19,24 @@ public interface RAGService {
     List<SearchResult> search(String question, int topK, List<Long> spaceIds);
 
     /**
-     * RAG 问答（不过滤空间）
+     * RAG 问答（不过滤空间，无历史）
      */
     ChatResponse chat(String question);
 
     /**
-     * RAG 问答（带空间权限过滤）
+     * RAG 问答（带空间权限过滤，无历史）
      */
     ChatResponse chat(String question, List<Long> spaceIds);
+
+    /**
+     * RAG 问答（带空间权限过滤 + 对话历史）
+     *
+     * @param question 用户问题
+     * @param spaceIds 可访问空间 ID 列表
+     * @param history  对话历史，每项含 role("user"|"assistant") 和 content
+     * @param category 可选分类过滤
+     */
+    ChatResponse chat(String question, List<Long> spaceIds, List<Map<String, String>> history, String category);
 
     /**
      * 流式 RAG 问答（SSE）— 返回 token 流 + 检索上下文
@@ -35,4 +46,14 @@ public interface RAGService {
      * @return StreamContext 包含 Flux<String> tokens + 检索 sources
      */
     StreamContext chatStream(String question, List<Long> spaceIds);
+
+    /**
+     * 流式 RAG 问答（SSE）— 带对话历史
+     *
+     * @param question 用户问题
+     * @param spaceIds 可访问空间 ID 列表
+     * @param history  对话历史，每项含 role("user"|"assistant") 和 content
+     * @param category 可选分类过滤
+     */
+    StreamContext chatStream(String question, List<Long> spaceIds, List<Map<String, String>> history, String category);
 }

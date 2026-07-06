@@ -1,0 +1,94 @@
+# ============================================================
+# 冒烟测试配置 — H2 内存库 + 禁用外部依赖
+# ============================================================
+
+spring:
+  # H2 内存数据库（MySQL 兼容模式）
+  datasource:
+    url: jdbc:h2:mem:knowbrain_test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+    hikari:
+      maximum-pool-size: 5
+
+  # H2 初始化脚本（建表）
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:test-schema.sql
+
+  # 禁用 Redis（测试中不需要缓存）
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+  # 禁用 Spring AI 自动配置（测试用 Mock）
+  ai:
+    openai:
+      base-url: http://localhost:9999
+      api-key: test-key
+      chat:
+        options:
+          model: test-model
+          temperature: 0.7
+      embedding:
+        options:
+          model: test-embedding
+          dimensions: 1024
+    vectorstore:
+      milvus:
+        client:
+          host: localhost
+          port: 19530
+        collection-name: test_collection
+        embedding-dimension: 1024
+        initialize-schema: false
+
+# MinIO（测试中 Mock）
+minio:
+  endpoint: http://localhost:9998
+  access-key: test
+  secret-key: test
+  bucket: test-bucket
+
+# JWT
+jwt:
+  secret: test-jwt-secret-2024
+  expire-hours: 24
+
+# 敏感词过滤（测试用默认值）
+security:
+  sensitive-word:
+    enabled: true
+    custom-words: ""
+
+# RAG 缓存（测试中 Mock）
+rag:
+  cache:
+    enabled: false
+    ttl-minutes: 0
+
+# 场景种子数据（测试不加载 JSON）
+scenario:
+  seed-path: classpath:scenarios/it-helpdesk
+
+# MyBatis-Plus
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  global-config:
+    db-config:
+      table-prefix: kb_
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# 日志（测试时精简）
+logging:
+  level:
+    com.knowbrain: WARN
+    org.springframework: WARN

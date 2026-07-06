@@ -117,6 +117,25 @@ CREATE TABLE IF NOT EXISTS `kb_space_member` (
     UNIQUE KEY `uk_space_user` (`space_id`, `user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='空间成员权限表';
 
+-- 搜索日志表（统计用）
+CREATE TABLE IF NOT EXISTS `kb_search_log` (
+    `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `question`      VARCHAR(500) NOT NULL COMMENT '用户问题原文',
+    `answer`        VARCHAR(500) DEFAULT NULL COMMENT 'AI 回答（截取前 500 字）',
+    `sources_count` INT          DEFAULT 0 COMMENT '引用来源数',
+    `source_titles` VARCHAR(1000) DEFAULT NULL COMMENT '引用文档标题(逗号分隔)',
+    `confidence`    VARCHAR(8)   DEFAULT NULL COMMENT '置信度: high/medium/low',
+    `faq_matched`   TINYINT      DEFAULT 0 COMMENT '是否 FAQ 命中: 0=否, 1=是',
+    `user_id`       BIGINT       DEFAULT NULL COMMENT '提问用户 ID',
+    `space_ids`     VARCHAR(200) DEFAULT NULL COMMENT '检索空间范围(逗号分隔)',
+    `category`      VARCHAR(64)  DEFAULT NULL COMMENT '分类过滤',
+    `cost_ms`       INT          DEFAULT 0 COMMENT '问答总耗时(毫秒)',
+    `create_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='搜索日志表';
+
 -- 答案反馈表
 CREATE TABLE IF NOT EXISTS `kb_feedback` (
     `id`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -133,5 +152,5 @@ CREATE TABLE IF NOT EXISTS `kb_feedback` (
 
 -- ==================== 默认管理员 ====================
 INSERT IGNORE INTO `kb_sys_user` (`id`, `username`, `password_hash`, `name`, `role`, `status`)
-VALUES (1, 'admin', '$2a$10$Hg1DXJMLlUR46CPuNkb1oOW2Gg164SDuF48Dlf9s696c7t3ZtJy/u', UNHEX('E7AEA1E79086E59198'), 'ADMIN', 'ACTIVE');
--- 默认密码: admin123（首次登录后请修改）
+VALUES (1, 'admin', '$2a$10$kLccD0teqN.yXQRw0zdkvufHZaxOaIR2lEP3bG4aQH/AzVsZvyk.6', UNHEX('E7AEA1E79086E59198'), 'ADMIN', 'ACTIVE');
+-- 默认密码: KnowBrain@2026

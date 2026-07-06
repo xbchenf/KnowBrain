@@ -1,5 +1,8 @@
 package com.knowbrain.retrieval.engine;
 
+import com.knowbrain.common.RequestContext;
+import com.knowbrain.statistics.SearchLog;
+import com.knowbrain.statistics.SearchLogMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,7 +15,9 @@ import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * RAG 知识库问答实现 — 混合检索 + LLM 生成 + 溯源
@@ -26,6 +31,8 @@ public class RAGServiceImpl implements RAGService {
     private final ChatClient chatClient;
     private final QueryPreprocessor preprocessor;
     private final RAGCacheService cacheService;
+    private final SearchLogMapper searchLogMapper;
+    private final RequestContext requestContext;
 
     @Value("classpath:prompts/rag-system.txt")
     private Resource promptTemplate;
@@ -33,44 +40,76 @@ public class RAGServiceImpl implements RAGService {
     public RAGServiceImpl(HybridSearchService hybridSearchService,
                           ChatClient.Builder chatClientBuilder,
                           QueryPreprocessor preprocessor,
-                          RAGCacheService cacheService) {
+                          RAGCacheService cacheService,
+                          SearchLogMapper searchLogMapper,
+                          RequestContext requestContext) {
         this.hybridSearchService = hybridSearchService;
         this.chatClient = chatClientBuilder.build();
         this.preprocessor = preprocessor;
         this.cacheService = cacheService;
+        this.searchLogMapper = searchLogMapper;
+        this.requestContext = requestContext;
     }
 
     @Override
     public ChatResponse chat(String question) {
-        return chat(question, Collections.emptyList());
+        return chat(question, Collections.emptyList(), Collections.emptyList(), null);
     }
 
     @Override
     public ChatResponse chat(String question, List<Long> spaceIds) {
-        // 0. Redis 缓存检查（高频问题短路）
-        ChatResponse cached = cacheService.get(question, spaceIds);
-        if (cached != null) {
-            return cached;
+        return chat(question, spaceIds, Collections.emptyList(), null);
+    }
+
+    @Override
+    public ChatResponse chat(String question, List<Long> spaceIds, List<Map<String, String>> history, String category) {
+        long tStart = System.currentTimeMillis();
+        long tPreprocess = tStart, tCacheCheck = tStart, tSearch = tStart, tLlm = tStart, tCacheWrite = tStart;
+
+        // 0. Redis 缓存检查（有历史或分类过滤时不缓存）
+        if (history.isEmpty() && (category == null || category.isBlank())) {
+            ChatResponse cached = cacheService.get(question, spaceIds);
+            if (cached != null) {
+                log.debug("[RAG耗时] cache=hit total={}ms question=\"{}\"",
+                        System.currentTimeMillis() - tStart, question);
+                return cached;
+            }
         }
+        tCacheCheck = System.currentTimeMillis();
 
         // 1. 预处理：术语改写 + FAQ 精确匹配
         QueryPreprocessor.Result pre = preprocessor.preprocess(question);
+        tPreprocess = System.currentTimeMillis();
 
-        // 2. FAQ 命中 → 直接返回预设答案（短路，不缓存）
+        // 2. FAQ 命中 → 直接返回预设答案（短路，不依赖 LLM）
         if (pre.isFaqMatched()) {
-            return new ChatResponse(pre.faqAnswer(), List.of(), false, "high");
+            var faqSource = new ChatResponse.SourceInfo(
+                    "📋 知识库预设问答", null, null,
+                    pre.faqQuestion() + " — 该回答来自知识库预设的高频问答，由人工维护更新");
+            ChatResponse response = new ChatResponse(pre.faqAnswer(), List.of(faqSource), false, "high");
+            int total = (int)(System.currentTimeMillis() - tStart);
+            saveSearchLog(question, pre.faqAnswer(), 1, "high", true, spaceIds, category, total, null);
+            log.debug("[RAG耗时] preprocess={}ms total={}ms faq=hit question=\"{}\"",
+                    tPreprocess - tCacheCheck, total, question);
+            return response;
         }
 
         String processed = pre.rewrittenQuery();
 
-        // 3. 混合检索 Top-5 相关切片（带空间过滤）
-        List<SearchResult> sources = search(processed, 5, spaceIds);
+        // 3. 混合检索 Top-5 相关切片（带空间过滤 + 可选分类过滤）
+        List<SearchResult> sources = hybridSearchService.search(processed, 5, spaceIds, category);
+        tSearch = System.currentTimeMillis();
 
-        // 4. 无结果 → 兜底（不缓存）
+        // 4. 无结果 → 兜底
         if (sources.isEmpty()) {
-            return new ChatResponse(
+            ChatResponse response = new ChatResponse(
                     "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。",
                     Collections.emptyList(), true, "low");
+            int total = (int)(System.currentTimeMillis() - tStart);
+            saveSearchLog(question, response.getAnswer(), 0, "low", false, spaceIds, category, total, null);
+            log.debug("[RAG耗时] cache={}ms preprocess={}ms search={}ms total={}ms results=0 question=\"{}\"",
+                    tCacheCheck - tStart, tPreprocess - tCacheCheck, tSearch - tPreprocess, total, question);
+            return response;
         }
 
         // 5. 拼接上下文
@@ -81,73 +120,119 @@ public class RAGServiceImpl implements RAGService {
                     .append(s.getContent()).append("\n\n");
         }
 
-        // 6. 加载 Prompt 模板 + 调用 LLM
-        String prompt = buildPrompt(context.toString(), question);
+        // 6. 加载 Prompt 模板 + 调用 LLM（流式聚合，比阻塞调用更稳定）
+        String prompt = buildPrompt(context.toString(), question, history);
         String answer;
         try {
-            answer = chatClient.prompt().user(prompt).call().content();
+            answer = chatClient.prompt().user(prompt)
+                    .stream()
+                    .content()
+                    .collectList()
+                    .map(list -> String.join("", list))
+                    .block(Duration.ofSeconds(120));
+            if (answer == null || answer.isEmpty()) {
+                throw new RuntimeException("LLM 流式聚合结果为空（超时或 API 无响应）");
+            }
         } catch (Exception e) {
             log.error("LLM 调用失败，降级返回检索原文: {}", e.getMessage());
+            long tDegrade = System.currentTimeMillis();
             String fallback = buildFallbackAnswer(sources);
             List<ChatResponse.SourceInfo> fallbackSources = sources.stream()
                     .map(s -> new ChatResponse.SourceInfo(
                             s.getDocumentTitle(), s.getDocumentId(),
                             s.getChunkIndex(), s.getContent()))
                     .toList();
-            return new ChatResponse(fallback, fallbackSources, true, "low");
+            ChatResponse response = new ChatResponse(fallback, fallbackSources, true, "low");
+            int total = (int)(System.currentTimeMillis() - tStart);
+            saveSearchLog(question, response.getAnswer(), sources.size(), "low", false, spaceIds, category, total, collectSourceTitles(sources));
+            log.debug("[RAG耗时] cache={}ms preprocess={}ms search={}ms llm=FAIL({}ms) degrade={}ms total={}ms results={} fallback=true question=\"{}\"",
+                    tCacheCheck - tStart, tPreprocess - tCacheCheck, tSearch - tPreprocess,
+                    tDegrade - tSearch, System.currentTimeMillis() - tDegrade, total, sources.size(), question);
+            return response;
         }
+        tLlm = System.currentTimeMillis();
 
-        // 7. 构造溯源 + 置信度
-        List<ChatResponse.SourceInfo> sourceInfos = sources.stream()
-                .map(s -> new ChatResponse.SourceInfo(
-                        s.getDocumentTitle(), s.getDocumentId(),
-                        s.getChunkIndex(), s.getContent()))
-                .toList();
-
+        // 7. 构造溯源 + 置信度（低置信度时过滤掉不相关的溯源，避免展示噪音）
         String confidence = evaluateConfidence(sources, answer);
+
+        List<ChatResponse.SourceInfo> sourceInfos;
+        if ("low".equals(confidence)) {
+            sourceInfos = List.of();
+        } else {
+            sourceInfos = sources.stream()
+                    .map(s -> new ChatResponse.SourceInfo(
+                            s.getDocumentTitle(), s.getDocumentId(),
+                            s.getChunkIndex(), s.getContent()))
+                    .toList();
+        }
 
         ChatResponse response = new ChatResponse(answer, sourceInfos, false, confidence);
 
-        // 8. 写入 Redis 缓存（仅 medium+ 非降级回答）
-        cacheService.put(question, spaceIds, response);
+        // 8. 写入 Redis 缓存（仅无历史 + medium+ 非降级回答）
+        if (history.isEmpty()) {
+            cacheService.put(question, spaceIds, response);
+        }
+        tCacheWrite = System.currentTimeMillis();
+
+        // 9. 写入搜索日志
+        int total = (int)(System.currentTimeMillis() - tStart);
+        saveSearchLog(question, answer, sources.size(), confidence, false, spaceIds, category, total, collectSourceTitles(sources));
+
+        log.debug("[RAG耗时] cache={}ms preprocess={}ms search={}ms llm={}ms cache_write={}ms total={}ms results={} confidence={} question=\"{}\"",
+                tCacheCheck - tStart, tPreprocess - tCacheCheck, tSearch - tPreprocess,
+                tLlm - tSearch, tCacheWrite - tLlm, total, sources.size(), confidence, question);
 
         return response;
     }
 
     @Override
     public StreamContext chatStream(String question, List<Long> spaceIds) {
-        // 0. Redis 缓存检查（高频问题短路）
-        ChatResponse cached = cacheService.get(question, spaceIds);
-        if (cached != null) {
-            List<SearchResult> cachedSources = cached.getSources() != null
-                    ? cached.getSources().stream()
-                        .map(s -> new SearchResult(s.getText(), s.getTitle(),
-                                s.getDocumentId(), s.getChunkIndex(), 1.0))
-                        .toList()
-                    : List.of();
-            return new StreamContext(
-                    Flux.just(cached.getAnswer()),
-                    cachedSources, false, cached.getConfidence());
+        return chatStream(question, spaceIds, Collections.emptyList(), null);
+    }
+
+    @Override
+    public StreamContext chatStream(String question, List<Long> spaceIds, List<Map<String, String>> history, String category) {
+        long startMs = System.currentTimeMillis();
+
+        // 0. Redis 缓存检查（有历史或分类过滤时跳过缓存）
+        if (history.isEmpty() && (category == null || category.isBlank())) {
+            ChatResponse cached = cacheService.get(question, spaceIds);
+            if (cached != null) {
+                List<SearchResult> cachedSources = cached.getSources() != null
+                        ? cached.getSources().stream()
+                            .map(s -> new SearchResult(s.getText(), s.getTitle(),
+                                    s.getDocumentId(), s.getChunkIndex(), 1.0))
+                            .toList()
+                        : List.of();
+                return new StreamContext(
+                        Flux.just(cached.getAnswer()),
+                        cachedSources, false, cached.getConfidence());
+            }
         }
 
         // 1. 预处理
         QueryPreprocessor.Result pre = preprocessor.preprocess(question);
 
-        // 2. FAQ 命中 → 单元素 Flux（短路返回预设答案）
+        // 2. FAQ 命中 → 短路返回预设答案，附虚拟溯源
         if (pre.isFaqMatched()) {
+            SearchResult faqSource = new SearchResult(
+                    pre.faqQuestion() + " — 该回答来自知识库预设的高频问答，由人工维护更新",
+                    "📋 知识库预设问答", null, null, 1.0);
+            saveSearchLog(question, pre.faqAnswer(), 1, "high", true, spaceIds, category, (int)(System.currentTimeMillis() - startMs), null);
             return new StreamContext(
                     Flux.just(pre.faqAnswer()),
-                    List.of(), false, "high");
+                    List.of(faqSource), false, "high");
         }
 
         String processed = pre.rewrittenQuery();
 
-        // 3. 混合检索
-        List<SearchResult> sources = search(processed, 5, spaceIds);
+        // 3. 混合检索（带空间过滤 + 可选分类过滤）
+        List<SearchResult> sources = hybridSearchService.search(processed, 5, spaceIds, category);
 
         // 4. 无结果 → 兜底
         if (sources.isEmpty()) {
             String fallbackMsg = "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。";
+            saveSearchLog(question, fallbackMsg, 0, "low", false, spaceIds, category, (int)(System.currentTimeMillis() - startMs), null);
             return new StreamContext(
                     Flux.just(fallbackMsg),
                     Collections.emptyList(), true, "low");
@@ -161,7 +246,7 @@ public class RAGServiceImpl implements RAGService {
                     .append(s.getContent()).append("\n\n");
         }
 
-        String prompt = buildPrompt(context.toString(), question);
+        String prompt = buildPrompt(context.toString(), question, history);
 
         // 6. LLM 流式生成
         Flux<String> tokenFlux = chatClient.prompt()
@@ -176,7 +261,13 @@ public class RAGServiceImpl implements RAGService {
 
         String confidence = evaluateConfidence(sources, null);
 
-        return new StreamContext(tokenFlux, sources, false, confidence);
+        // 低置信度时过滤掉不相关的溯源，避免展示噪音
+        List<SearchResult> effectiveSources = "low".equals(confidence) ? List.of() : sources;
+
+        // 记录搜索日志（流式场景下答案尚未生成，记录检索阶段信息）
+        saveSearchLog(question, null, sources.size(), confidence, false, spaceIds, category, (int)(System.currentTimeMillis() - startMs), collectSourceTitles(sources));
+
+        return new StreamContext(tokenFlux, effectiveSources, false, confidence);
     }
 
     @Override
@@ -188,7 +279,7 @@ public class RAGServiceImpl implements RAGService {
                backoff = @Backoff(delay = 1000))
     @Override
     public List<SearchResult> search(String question, int topK, List<Long> spaceIds) {
-        return hybridSearchService.search(question, topK, spaceIds);
+        return hybridSearchService.search(question, topK, spaceIds, null);
     }
 
     // ==================== 辅助方法 ====================
@@ -210,10 +301,13 @@ public class RAGServiceImpl implements RAGService {
         return sb.toString().trim();
     }
 
-    private String buildPrompt(String context, String question) {
+    private String buildPrompt(String context, String question, List<Map<String, String>> history) {
+        String historyText = formatHistory(history);
         try {
             String template = new String(promptTemplate.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            return template.replace("{context}", context).replace("{question}", question);
+            return template.replace("{history}", historyText)
+                    .replace("{context}", context)
+                    .replace("{question}", question);
         } catch (IOException e) {
             log.warn("Prompt 模板加载失败，使用默认模板", e);
             return """
@@ -223,13 +317,89 @@ public class RAGServiceImpl implements RAGService {
                     2. 如果参考资料不足以回答，请明确说明"当前文档库中未找到相关信息"
                     3. 回答简洁、清晰、专业
                     4. 引用具体文档时，使用 [来源: 文档名] 标注
+                    5. 结合对话历史理解用户意图，回答时保持上下文连贯
 
+                    %s
                     参考资料：
                     %s
 
                     用户问题：%s
-                    """.formatted(context, question);
+                    """.formatted(historyText, context, question);
         }
+    }
+
+    /**
+     * 格式化对话历史为 Prompt 文本
+     * 最多取最近 10 条消息（5 轮对话）
+     */
+    private String formatHistory(List<Map<String, String>> history) {
+        if (history == null || history.isEmpty()) {
+            return "";
+        }
+        // 只取最近 N 条，防止 token 超限
+        int maxMessages = 10;
+        List<Map<String, String>> recent = history;
+        if (history.size() > maxMessages) {
+            recent = history.subList(history.size() - maxMessages, history.size());
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("对话历史：\n");
+        for (Map<String, String> msg : recent) {
+            String role = msg.get("role");
+            String content = msg.get("content");
+            if (content == null || content.isBlank()) continue;
+            // 截断过长的历史消息，防止 token 超限
+            String truncated = content.length() > 500 ? content.substring(0, 500) + "..." : content;
+            if ("user".equals(role)) {
+                sb.append("用户：").append(truncated).append("\n");
+            } else if ("assistant".equals(role)) {
+                sb.append("助手：").append(truncated).append("\n");
+            }
+        }
+        sb.append("\n");
+        return sb.toString();
+    }
+
+    // ==================== 搜索日志 ====================
+
+    /**
+     * 异步写入搜索日志（不阻塞主流程）
+     */
+    private void saveSearchLog(String question, String answer, int sourcesCount, String confidence,
+                               boolean faqMatched, List<Long> spaceIds, String category, int costMs,
+                               String sourceTitles) {
+        try {
+            SearchLog entry = new SearchLog();
+            entry.setQuestion(question != null && question.length() > 500
+                    ? question.substring(0, 500) : question);
+            entry.setAnswer(answer != null && answer.length() > 500
+                    ? answer.substring(0, 500) : answer);
+            entry.setSourcesCount(sourcesCount);
+            entry.setConfidence(confidence);
+            entry.setFaqMatched(faqMatched ? 1 : 0);
+            entry.setUserId(requestContext.getCurrentUserId());
+            entry.setSpaceIds(spaceIds != null && !spaceIds.isEmpty()
+                    ? spaceIds.stream().map(String::valueOf).collect(Collectors.joining(",")) : null);
+            entry.setCategory(category);
+            entry.setCostMs(costMs);
+            entry.setSourceTitles(sourceTitles);
+            searchLogMapper.insert(entry);
+        } catch (Exception e) {
+            log.warn("搜索日志写入失败（不影响主流程）: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 从检索结果中提取文档标题（去重，逗号分隔）
+     */
+    private String collectSourceTitles(List<SearchResult> sources) {
+        if (sources == null || sources.isEmpty()) return null;
+        return sources.stream()
+                .map(SearchResult::getDocumentTitle)
+                .filter(t -> t != null && !t.isBlank())
+                .distinct()
+                .collect(Collectors.joining(","));
     }
 
     /**

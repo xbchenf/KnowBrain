@@ -1,10 +1,16 @@
 package com.knowbrain.document.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.knowbrain.auth.SysUser;
+import com.knowbrain.auth.SysUserMapper;
 import com.knowbrain.document.entity.EkDocument;
 import com.knowbrain.document.entity.EkDocumentChunk;
 import com.knowbrain.document.mapper.EkDocumentChunkMapper;
 import com.knowbrain.document.mapper.EkDocumentMapper;
 import com.knowbrain.document.service.DocumentService;
+import com.knowbrain.document.service.PdfImageRenderer;
+import com.knowbrain.document.service.QwenVisionService;
 import com.knowbrain.document.service.SmartChunker;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -32,7 +38,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 文档管理服务 — 上传 → Tika 解析 → SmartChunker 切片 → Milvus 向量化
@@ -49,6 +57,8 @@ public class DocumentServiceImpl implements DocumentService {
     private final MilvusClientV2 milvusClient;
     private final EmbeddingModel embeddingModel;
     private final RAGCacheService cacheService;
+    private final SysUserMapper userMapper;
+    private final QwenVisionService visionService;
 
     @Value("${minio.bucket}")
     private String bucket;
@@ -59,13 +69,18 @@ public class DocumentServiceImpl implements DocumentService {
     @Value("${spring.ai.vectorstore.milvus.embedding-dimension}")
     private int dimension;
 
+    @Value("${qwen-vl.ocr-min-chars:100}")
+    private int ocrMinChars;
+
     public DocumentServiceImpl(EkDocumentMapper documentMapper,
                                EkDocumentChunkMapper chunkMapper,
                                MinioClient minioClient,
                                SmartChunker chunker,
                                MilvusClientV2 milvusClient,
                                EmbeddingModel embeddingModel,
-                               RAGCacheService cacheService) {
+                               RAGCacheService cacheService,
+                               SysUserMapper userMapper,
+                               QwenVisionService visionService) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.minioClient = minioClient;
@@ -73,6 +88,8 @@ public class DocumentServiceImpl implements DocumentService {
         this.milvusClient = milvusClient;
         this.embeddingModel = embeddingModel;
         this.cacheService = cacheService;
+        this.userMapper = userMapper;
+        this.visionService = visionService;
     }
 
     @Override
@@ -112,10 +129,53 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    public Page<EkDocument> listBySpace(Long spaceId, int page, int size) {
+        LambdaQueryWrapper<EkDocument> wrapper = new LambdaQueryWrapper<>();
+        if (spaceId != null && spaceId > 0) {
+            wrapper.eq(EkDocument::getSpaceId, spaceId);
+        }
+        wrapper.orderByDesc(EkDocument::getCreateTime);
+        Page<EkDocument> result = documentMapper.selectPage(new Page<>(page, size), wrapper);
+        fillUploaderNames(result.getRecords());
+        return result;
+    }
+
+    /** 批量填充文档的上传者姓名 */
+    private void fillUploaderNames(List<EkDocument> docs) {
+        if (docs.isEmpty()) return;
+        List<Long> uploaderIds = docs.stream()
+                .map(EkDocument::getUploaderId)
+                .distinct()
+                .toList();
+        Map<Long, String> nameMap = userMapper.selectBatchIds(uploaderIds).stream()
+                .collect(Collectors.toMap(SysUser::getId, SysUser::getName, (a, b) -> a));
+        for (EkDocument d : docs) {
+            d.setUploaderName(nameMap.getOrDefault(d.getUploaderId(), "未知用户"));
+        }
+    }
+
+    @Override
     public void delete(Long id) {
         documentMapper.deleteById(id);
         cacheService.invalidateAll();
         log.info("文档已删除: id={}", id);
+    }
+
+    @Override
+    public void updateMeta(Long id, String title, String category) {
+        EkDocument doc = documentMapper.selectById(id);
+        if (doc == null) {
+            throw new RuntimeException("文档不存在");
+        }
+        if (title != null && !title.isBlank()) {
+            doc.setTitle(title.trim());
+        }
+        if (category != null) {
+            doc.setCategory(category.isBlank() ? null : category.trim());
+        }
+        documentMapper.updateById(doc);
+        cacheService.invalidateAll();
+        log.info("文档元数据已更新: id={}, title={}, category={}", id, doc.getTitle(), doc.getCategory());
     }
 
     @Override
@@ -137,14 +197,79 @@ public class DocumentServiceImpl implements DocumentService {
 
     /**
      * Tika 解析 → SmartChunker 切片 → Milvus 向量化
+     *
+     * 扫描件 PDF 检测：Tika 解析文本 < ocrMinChars 时，自动使用 Qwen-VL OCR 提取文字
      */
     private void parseAndVectorize(EkDocument doc, MultipartFile file) {
+        // 提前读取文件字节（parseWithTika 会消费 MultipartFile 流，后续 OCR 需复用）
+        byte[] fileBytes;
+        try {
+            fileBytes = file.getBytes();
+        } catch (Exception e) {
+            log.error("读取文件字节失败: docId={}", doc.getId(), e);
+            doc.setStatus("FAILED");
+            documentMapper.updateById(doc);
+            return;
+        }
+
         String fullText = parseWithTika(file);
+
+        // 扫描件检测：文本量不足 → 尝试视觉 OCR
+        if (isScannedPdf(fullText, file)) {
+            log.info("检测到扫描件 PDF: docId={}, Tika 仅解析 {} 字符, 启动 Qwen-VL OCR",
+                    doc.getId(), fullText != null ? fullText.length() : 0);
+            try {
+                String ocrText = ocrWithVision(fileBytes);
+                if (ocrText != null && !ocrText.isBlank()) {
+                    fullText = ocrText;
+                    log.info("Qwen-VL OCR 提取成功: docId={}, {} 字符", doc.getId(), fullText.length());
+                } else {
+                    log.warn("Qwen-VL OCR 提取为空: docId={}, 回退到 Tika 结果", doc.getId());
+                }
+            } catch (Exception e) {
+                log.error("Qwen-VL OCR 失败: docId={}, 回退到 Tika 结果", doc.getId(), e);
+            }
+        }
+
         doc.setParsedContent(fullText);
         documentMapper.updateById(doc);
-        log.info("Tika 解析完成: docId={}, {} 字符", doc.getId(), fullText.length());
+        log.info("文档解析完成: docId={}, {} 字符", doc.getId(), fullText.length());
 
         vectorizeDocument(doc);
+    }
+
+    /** 判断是否为扫描件 PDF */
+    private boolean isScannedPdf(String text, MultipartFile file) {
+        String ext = getFileType(file.getOriginalFilename());
+        if (!"pdf".equals(ext)) return false;
+        int charCount = text != null ? text.trim().length() : 0;
+        return charCount < ocrMinChars;
+    }
+
+    /** 使用 Qwen-VL 逐页提取扫描件文字 */
+    private String ocrWithVision(byte[] pdfBytes) throws Exception {
+        PdfImageRenderer renderer = new PdfImageRenderer();
+        List<byte[]> pageImages = renderer.renderPages(pdfBytes);
+
+        if (pageImages.isEmpty()) {
+            throw new RuntimeException("PDF 渲染无页面");
+        }
+
+        log.info("扫描件 OCR 开始: {} 页", pageImages.size());
+        StringBuilder fullText = new StringBuilder();
+        for (int i = 0; i < pageImages.size(); i++) {
+            long t0 = System.currentTimeMillis();
+            String pageText = visionService.extractText(pageImages.get(i), i + 1);
+            long elapsed = System.currentTimeMillis() - t0;
+
+            if (!pageText.isBlank()) {
+                fullText.append(pageText).append("\n\n");
+                log.info("  第 {} 页 OCR 完成: {} 字符, {}ms", i + 1, pageText.length(), elapsed);
+            } else {
+                log.warn("  第 {} 页 OCR 为空: {}ms", i + 1, elapsed);
+            }
+        }
+        return fullText.toString().trim();
     }
 
     /**

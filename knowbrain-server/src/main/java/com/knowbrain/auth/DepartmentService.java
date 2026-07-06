@@ -6,9 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -55,6 +53,12 @@ public class DepartmentService {
                 tree.add(dept);
             }
         }
+
+        // 自底向上递归汇总：成员数 + 子部门数（含所有下级）
+        for (Department root : tree) {
+            computeRecursiveStats(root);
+        }
+
         return tree;
     }
 
@@ -62,11 +66,32 @@ public class DepartmentService {
         List<Department> children = childrenMap.get(parent.getId());
         parent.setChildren(children != null ? children : List.of());
         if (children != null) {
-            parent.setChildCount(children.size());
             for (Department child : children) {
                 attachChildren(child, childrenMap);
             }
         }
+    }
+
+    /**
+     * 自底向上递归汇总：将直接成员数和直接子节点数汇总为含所有下级的统计值。
+     * memberCount 和 childCount 最终为递归汇总值，directMemberCount 保留本级直接成员数。
+     */
+    private int computeRecursiveStats(Department dept) {
+        int directMembers = dept.getMemberCount(); // 汇总前存的是本级直接成员数
+        dept.setDirectMemberCount(directMembers);
+
+        int totalDescendants = 0;
+        int totalMembers = directMembers;
+
+        for (Department child : dept.getChildren()) {
+            totalMembers += computeRecursiveStats(child);
+            // 1（子部门本身）+ 子部门的所有后代
+            totalDescendants += 1 + child.getChildCount();
+        }
+
+        dept.setChildCount(totalDescendants);
+        dept.setMemberCount(totalMembers);
+        return totalMembers;
     }
 
     /** 创建部门 */
@@ -88,20 +113,38 @@ public class DepartmentService {
         return dept;
     }
 
-    /** 删除部门（需检查无用户关联） */
+    /** 删除部门（递归检查：本级+所有下级部门无用户才能删除） */
     public void delete(Long id) {
+        // 递归收集本级及所有下级部门 ID
+        Set<Long> allIds = new HashSet<>();
+        allIds.add(id);
+        collectDescendantIds(id, allIds);
+
+        // 检查这些部门下是否有用户
         long userCount = userMapper.selectCount(
-                new LambdaQueryWrapper<SysUser>().eq(SysUser::getDepartmentId, id));
+                new LambdaQueryWrapper<SysUser>().in(SysUser::getDepartmentId, allIds));
         if (userCount > 0) {
-            throw new BizException(400, "该部门下还有 " + userCount + " 名用户，无法删除");
+            throw new BizException(400, "该部门及其下级共有 " + userCount + " 名用户，无法删除。请先迁移或清空相关人员");
         }
-        // 检查子部门
+
+        // 检查是否有子部门（直接子部门）
         long childCount = departmentMapper.selectCount(
                 new LambdaQueryWrapper<Department>().eq(Department::getParentId, id));
         if (childCount > 0) {
             throw new BizException(400, "该部门下还有 " + childCount + " 个子部门，请先删除子部门");
         }
+
         departmentMapper.deleteById(id);
         log.info("部门删除: id={}", id);
+    }
+
+    /** 递归收集指定部门的所有后代部门 ID */
+    private void collectDescendantIds(Long parentId, Set<Long> result) {
+        List<Department> children = departmentMapper.selectList(
+                new LambdaQueryWrapper<Department>().eq(Department::getParentId, parentId));
+        for (Department child : children) {
+            result.add(child.getId());
+            collectDescendantIds(child.getId(), result);
+        }
     }
 }

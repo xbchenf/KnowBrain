@@ -51,12 +51,25 @@ public class FaqService {
     }
 
     /**
-     * 精确匹配：关键词命中 ≥ 2 个时返回最佳匹配
+     * 匹配 FAQ：先问题文本匹配，再关键词计数
      */
     public FaqMatchResult match(String query) {
         if (query == null || query.isEmpty() || cachedEntries.isEmpty()) return null;
 
-        String q = query.toLowerCase();
+        String q = query.toLowerCase().trim();
+
+        // 1. 优先：问题文本直接匹配（覆盖欢迎页推荐问题点击等场景）
+        for (int i = 0; i < cachedEntries.size(); i++) {
+            ScenarioFaq faq = cachedEntries.get(i);
+            String faqQ = faq.getQuestion().toLowerCase();
+            // 查询包含 FAQ 问题，或 FAQ 问题包含查询（允许标点/语气词差异）
+            if (q.contains(faqQ) || faqQ.contains(q)) {
+                log.info("FAQ 问题文本命中: \"{}\"", faq.getQuestion());
+                return new FaqMatchResult(faq, 99);
+            }
+        }
+
+        // 2. 兜底：关键词命中 ≥ 2 个时返回最佳匹配
         Map<Integer, Integer> hitScores = new HashMap<>();
 
         for (String kw : keywordIndex.keySet()) {
@@ -79,7 +92,7 @@ public class FaqService {
 
         if (bestScore >= 2 && bestIdx >= 0) {
             ScenarioFaq faq = cachedEntries.get(bestIdx);
-            log.info("FAQ 命中: score={}, question=\"{}\"", bestScore, faq.getQuestion());
+            log.info("FAQ 关键词命中: score={}, question=\"{}\"", bestScore, faq.getQuestion());
             return new FaqMatchResult(faq, bestScore);
         }
         return null;

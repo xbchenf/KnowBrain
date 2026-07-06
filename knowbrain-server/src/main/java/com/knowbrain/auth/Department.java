@@ -39,11 +39,15 @@ public class Department {
     @TableField(exist = false)
     private List<Department> children;
 
-    /** 子部门数量（非数据库字段） */
+    /** 下级部门总数（非数据库字段，递归含所有后代） */
     @TableField(exist = false)
     private int childCount;
 
-    /** 部门成员数量（非数据库字段） */
+    /** 部门成员总数（非数据库字段，递归含所有下级成员） */
     @TableField(exist = false)
     private int memberCount;
+
+    /** 本部门直接成员数（非数据库字段，不含下级） */
+    @TableField(exist = false)
+    private int directMemberCount;
 }

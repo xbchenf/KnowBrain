@@ -1,5 +1,6 @@
 package com.knowbrain.document.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.knowbrain.document.entity.EkDocument;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,9 +20,19 @@ public interface DocumentService {
     EkDocument getById(Long id);
 
     /**
+     * 分页查询文档列表（按空间过滤，按创建时间倒序）
+     */
+    Page<EkDocument> listBySpace(Long spaceId, int page, int size);
+
+    /**
      * 删除文档（逻辑删除）
      */
     void delete(Long id);
+
+    /**
+     * 更新文档元数据（标题、分类）
+     */
+    void updateMeta(Long id, String title, String category);
 
     /**
      * 对已解析的文档重新切片 + 向量化

@@ -21,12 +21,12 @@
           <h4>{{ s.name }}</h4>
           <p class="space-desc">{{ s.description || '暂无描述' }}</p>
           <div class="space-meta">
+            <span>{{ s.ownerName || '未知' }}</span>
             <span>{{ s.createTime?.substring(0, 10) }}</span>
           </div>
         </el-card>
       </el-col>
 
-      <!-- 空状态 -->
       <el-col :span="24" v-if="!loading && spaces.length === 0">
         <el-empty description="暂无空间，点击右上角创建第一个空间">
           <el-button type="primary" @click="showCreate = true">创建空间</el-button>
@@ -136,9 +136,7 @@ function visibilityLabel(v: string) {
   margin-bottom: 24px;
 }
 .toolbar h3 { font-size: 18px; color: #303133; }
-.space-card {
-  margin-bottom: 20px; cursor: pointer; transition: transform .2s;
-}
+.space-card { margin-bottom: 20px; cursor: pointer; transition: transform .2s; }
 .space-card:hover { transform: translateY(-2px); }
 .space-card-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -147,5 +145,5 @@ function visibilityLabel(v: string) {
 .space-card h4 { font-size: 16px; color: #303133; margin-bottom: 6px; }
 .space-desc { font-size: 13px; color: #909399; margin-bottom: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.space-meta { font-size: 12px; color: #c0c4cc; }
+.space-meta { font-size: 12px; color: #c0c4cc; display: flex; gap: 12px; }
 </style>

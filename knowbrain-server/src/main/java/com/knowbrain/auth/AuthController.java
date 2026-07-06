@@ -89,8 +89,10 @@ public class AuthController {
         if (username.length() < 3 || username.length() > 50) {
             return Result.badRequest("用户名需 3-50 个字符");
         }
-        if (password.length() < 6) {
-            return Result.badRequest("密码至少 6 位");
+        try {
+            PasswordValidator.validate(password);
+        } catch (IllegalArgumentException e) {
+            return Result.badRequest(e.getMessage());
         }
         if (userMapper.selectCount(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, username)) > 0) {

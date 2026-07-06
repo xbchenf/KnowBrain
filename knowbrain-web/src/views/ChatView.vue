@@ -109,6 +109,39 @@
     <!-- 输入区 -->
     <div class="input-area">
       <div class="input-wrap">
+        <div class="filter-bar" v-if="spaces.length || categoryTree.length">
+          <el-select
+            v-model="selectedSpaceIds"
+            :data="spaces"
+            multiple
+            placeholder="全部空间"
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            size="small"
+            class="space-select"
+            v-if="spaces.length"
+          >
+            <el-option
+              v-for="s in spaces"
+              :key="s.id"
+              :label="s.name"
+              :value="s.id"
+            />
+          </el-select>
+          <el-tree-select
+            v-model="selectedCategory"
+            :data="categoryTree"
+            :props="{ label: 'name', value: 'key', children: 'children' }"
+            placeholder="全部分类"
+            clearable
+            check-strictly
+            filterable
+            size="small"
+            class="category-select"
+            v-if="categoryTree.length"
+          />
+        </div>
         <textarea
           v-model="input"
           class="chat-input"
@@ -136,8 +169,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
-import { chatWithKnowledgeStream, submitFeedback } from '../api'
+import { ref, nextTick, onMounted } from 'vue'
+import { chatWithKnowledgeStream, submitFeedback, listPublicCategories, listPublicFaq, listSpaces, type HistoryMessage } from '../api'
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
@@ -148,18 +181,45 @@ interface Message {
   feedback?: string
 }
 
-const suggestions = [
+const defaultSuggestions = [
   'VPN 怎么配置？',
   '年假有几天？',
   '报销流程是什么？',
   '入职设备怎么申请？'
 ]
+const suggestions = ref<string[]>([...defaultSuggestions])
 
 const messages = ref<Message[]>([])
 const input = ref('')
 const loading = ref(false)
 const messagesRef = ref<HTMLElement>()
 const inputRef = ref<HTMLTextAreaElement>()
+
+// 空间 + 分类选择
+const spaces = ref<any[]>([])
+const selectedSpaceIds = ref<number[]>([])
+const categoryTree = ref<any[]>([])
+const selectedCategory = ref('')
+
+onMounted(async () => {
+  try {
+    const res = await listPublicCategories()
+    categoryTree.value = res.data?.data || []
+  } catch { /* 非关键，忽略 */ }
+
+  try {
+    const faqRes = await listPublicFaq()
+    const faqList = faqRes.data?.data || []
+    if (faqList.length) {
+      suggestions.value = faqList.slice(0, 5).map((f: any) => f.question)
+    }
+  } catch { /* 取不到 FAQ 就用默认值 */ }
+
+  try {
+    const spaceRes = await listSpaces()
+    spaces.value = spaceRes.data?.data?.records || spaceRes.data?.data || []
+  } catch { /* 非关键，忽略 */ }
+})
 
 function quickAsk(q: string) {
   input.value = q
@@ -177,6 +237,13 @@ async function send() {
   const question = input.value.trim()
   if (!question || loading.value) return
 
+  // 取最近 5 轮对话（10 条消息）作为历史，排除当前轮
+  const MAX_HISTORY = 10
+  const recentHistory: HistoryMessage[] = messages.value
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .slice(-MAX_HISTORY)
+    .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
   messages.value.push({ role: 'user', content: question })
   input.value = ''
   if (inputRef.value) { inputRef.value.style.height = 'auto' }
@@ -185,6 +252,9 @@ async function send() {
   const aiMsg: Message = { role: 'assistant', content: '' }
   messages.value.push(aiMsg)
   await scrollToBottom()
+
+  const category = selectedCategory.value || undefined
+  const spaceIds = selectedSpaceIds.value.length ? selectedSpaceIds.value : undefined
 
   await chatWithKnowledgeStream(question, {
     onToken(token: string) {
@@ -212,7 +282,7 @@ async function send() {
       loading.value = false
       scrollToBottom()
     }
-  })
+  }, recentHistory, category, spaceIds)
 }
 
 function addSystemMessage(content: string) {
@@ -348,6 +418,10 @@ defineExpose({ addSystemMessage })
 /* ===== 输入区 ===== */
 .input-area { padding: 12px 16px 20px; background: #fff; }
 .input-wrap { max-width: 800px; margin: 0 auto; position: relative; }
+.filter-bar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.space-select { width: 200px; }
+.category-select { width: 200px; }
+
 .chat-input {
   width: 100%; padding: 10px 44px 10px 16px; border: 1px solid #e5e5e5; border-radius: 12px;
   font-size: 14px; outline: none; resize: none; font-family: inherit; line-height: 1.5;

@@ -25,6 +25,14 @@ public class Space {
     /** 创建者用户 ID */
     private Long ownerId;
 
+    /** 创建者姓名（非数据库字段，查询时填充） */
+    @TableField(exist = false)
+    private String ownerName;
+
+    /** 当前用户是否可管理此空间（非数据库字段，查询时填充） */
+    @TableField(exist = false)
+    private Boolean isOwner;
+
     /** 可见性: PRIVATE(私有) / TEAM(团队) / PUBLIC(公开) */
     private String visibility;
 

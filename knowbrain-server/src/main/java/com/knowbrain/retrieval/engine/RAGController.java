@@ -1,5 +1,7 @@
 package com.knowbrain.retrieval.engine;
 
+import com.knowbrain.common.GlobalExceptionHandler.BizException;
+import com.knowbrain.common.RateLimiter;
 import com.knowbrain.common.Result;
 import com.knowbrain.permission.PermissionService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,19 +31,23 @@ public class RAGController {
 
     private final RAGService ragService;
     private final PermissionService permissionService;
+    private final RateLimiter rateLimiter;
 
     /**
-     * RAG 问答：检索 + 生成（带空间权限过滤）
+     * RAG 问答：检索 + 生成（带空间权限过滤 + 可选对话历史）
      */
     @PostMapping("/chat")
-    public Result<ChatResponse> chat(@RequestBody Map<String, String> body,
+    public Result<ChatResponse> chat(@RequestBody Map<String, Object> body,
                                       HttpServletRequest request) {
-        String question = body.get("question");
+        checkRateLimit(request);
+        String question = (String) body.get("question");
         if (question == null || question.isBlank()) {
             return Result.badRequest("问题不能为空");
         }
-        List<Long> spaceIds = getAccessibleSpaceIds(request);
-        ChatResponse response = ragService.chat(question, spaceIds);
+        List<Long> spaceIds = resolveSpaceIds(request, body);
+        List<Map<String, String>> history = extractHistory(body);
+        String category = body.get("category") instanceof String s && !s.isBlank() ? s : null;
+        ChatResponse response = ragService.chat(question, spaceIds, history, category);
         return Result.ok(response);
     }
 
@@ -52,6 +59,7 @@ public class RAGController {
             @RequestParam("q") String question,
             @RequestParam(value = "topK", defaultValue = "5") int topK,
             HttpServletRequest request) {
+        checkRateLimit(request);
         if (question == null || question.isBlank()) {
             return Result.badRequest("搜索关键词不能为空");
         }
@@ -70,23 +78,26 @@ public class RAGController {
      * - error   : 异常信号
      */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream(@RequestBody Map<String, String> body,
+    public SseEmitter chatStream(@RequestBody Map<String, Object> body,
                                   HttpServletRequest request) {
-        String question = body.get("question");
+        checkRateLimit(request);
+        String question = (String) body.get("question");
         if (question == null || question.isBlank()) {
             SseEmitter bad = new SseEmitter();
             bad.completeWithError(new IllegalArgumentException("问题不能为空"));
             return bad;
         }
 
-        List<Long> spaceIds = getAccessibleSpaceIds(request);
+        List<Long> spaceIds = resolveSpaceIds(request, body);
+        List<Map<String, String>> history = extractHistory(body);
+        String category = body.get("category") instanceof String s && !s.isBlank() ? s : null;
         SseEmitter emitter = new SseEmitter(300_000L); // 5 分钟超时
 
         // 在独立线程中桥接 Flux → SSE
         Thread worker = new Thread(() -> {
             try {
-                log.info("SSE: 开始流式处理 question={}", question);
-                StreamContext ctx = ragService.chatStream(question, spaceIds);
+                log.info("SSE: 开始流式处理 question={} historyRounds={} category={}", question, history.size() / 2, category);
+                StreamContext ctx = ragService.chatStream(question, spaceIds, history, category);
                 log.info("SSE: StreamContext 就绪 sources={} fallback={}", ctx.sources().size(), ctx.fallback());
                 Flux<String> tokens = ctx.tokens();
 
@@ -146,6 +157,28 @@ public class RAGController {
     }
 
     /**
+     * 从请求体中提取对话历史
+     */
+    private List<Map<String, String>> extractHistory(Map<String, Object> body) {
+        Object historyObj = body.get("history");
+        if (!(historyObj instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, String>> history = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> raw) {
+                Object roleObj = raw.get("role");
+                Object contentObj = raw.get("content");
+                if (roleObj instanceof String role && contentObj instanceof String content
+                        && !role.isBlank() && !content.isBlank()) {
+                    history.add(Map.of("role", role, "content", content));
+                }
+            }
+        }
+        return history;
+    }
+
+    /**
      * 从请求中提取用户 ID，查询可访问空间列表
      * 未登录用户只能看 PUBLIC 空间
      */
@@ -158,5 +191,40 @@ public class RAGController {
         Object uid = request.getAttribute("userId");
         if (uid instanceof Number n) return n.longValue();
         throw new IllegalStateException("未登录用户不应到达此处（AuthInterceptor 拦截）");
+    }
+
+    /**
+     * 限流检查：超出配额抛出 BizException(429)，由 GlobalExceptionHandler 转换为 HTTP 429
+     */
+    private void checkRateLimit(HttpServletRequest request) {
+        Long userId = extractUserId(request);
+        if (!rateLimiter.tryAcquire(userId)) {
+            throw new BizException(429, "请求过于频繁，请稍后再试");
+        }
+    }
+
+    /**
+     * 解析客户端传入的 spaceIds（可选），与用户可访问空间取交集。
+     * 未传或为空时使用全部可访问空间。
+     */
+    private List<Long> resolveSpaceIds(HttpServletRequest request, Map<String, Object> body) {
+        List<Long> accessible = getAccessibleSpaceIds(request);
+
+        Object clientIds = body.get("spaceIds");
+        if (!(clientIds instanceof List<?> list) || list.isEmpty()) {
+            return accessible;
+        }
+
+        // 取交集：客户端传入 ∩ 用户可访问
+        List<Long> requested = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof Number n) {
+                requested.add(n.longValue());
+            }
+        }
+        if (requested.isEmpty()) return accessible;
+
+        requested.retainAll(accessible);
+        return requested.isEmpty() ? accessible : requested;
     }
 }

@@ -51,7 +51,7 @@ export const getSpace = (id: number) =>
 export const createSpace = (name: string, description: string, visibility: string, departmentScope?: number[]) =>
   api.post('/spaces', { name, description, visibility, departmentScope })
 
-export const updateSpace = (id: number, data: Record<string, string>) =>
+export const updateSpace = (id: number, data: Record<string, any>) =>
   api.put(`/spaces/${id}`, data)
 
 export const deleteSpace = (id: number) =>
@@ -67,10 +67,11 @@ export const removeMember = (spaceId: number, userId: number) =>
   api.delete(`/spaces/${spaceId}/members/${userId}`)
 
 // ================== 文档 ==================
-export const uploadDocument = (file: File, spaceId: number) => {
+export const uploadDocument = (file: File, spaceId: number, category?: string) => {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('spaceId', String(spaceId))
+  if (category) fd.append('category', category)
   return api.post('/documents/upload', fd, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
@@ -81,6 +82,9 @@ export const listDocuments = (spaceId: number, page = 1, size = 20) =>
 
 export const getDocument = (id: number) =>
   api.get(`/documents/${id}`)
+
+export const updateDocument = (id: number, data: Record<string, any>) =>
+  api.put(`/documents/${id}`, data)
 
 export const deleteDocument = (id: number) =>
   api.delete(`/documents/${id}`)
@@ -110,3 +114,52 @@ export const updateUser = (id: number, data: Record<string, any>) =>
 
 export const resetPassword = (id: number, password: string) =>
   api.put(`/admin/users/${id}/reset-password`, { password })
+
+// ================== 场景配置 ==================
+// 公开分类（上传文档时选择分类用）
+export const listPublicCategories = () =>
+  api.get('/categories')
+
+// 知识分类
+export const listCategories = () =>
+  api.get('/admin/scenario/categories')
+
+export const createCategory = (data: Record<string, any>) =>
+  api.post('/admin/scenario/categories', data)
+
+export const deleteCategory = (id: number) =>
+  api.delete(`/admin/scenario/categories/${id}`)
+
+// 术语词典
+export const listGlossary = () =>
+  api.get('/admin/scenario/glossary')
+
+export const createGlossary = (data: Record<string, any>) =>
+  api.post('/admin/scenario/glossary', data)
+
+export const deleteGlossary = (id: number) =>
+  api.delete(`/admin/scenario/glossary/${id}`)
+
+// 预设问答
+export const listFaq = () =>
+  api.get('/admin/scenario/faq')
+
+export const createFaq = (data: Record<string, any>) =>
+  api.post('/admin/scenario/faq', data)
+
+export const updateFaq = (id: number, data: Record<string, any>) =>
+  api.put(`/admin/scenario/faq/${id}`, data)
+
+export const deleteFaq = (id: number) =>
+  api.delete(`/admin/scenario/faq/${id}`)
+
+// ================== 反馈统计 ==================
+export const getFeedbackStats = (startDate?: string, endDate?: string) =>
+  api.get('/admin/feedback/stats', { params: { startDate, endDate } })
+
+export const listFeedback = (params: Record<string, any>) =>
+  api.get('/admin/feedback/list', { params })
+
+// ================== 使用统计 ==================
+export const getStats = () =>
+  api.get('/admin/stats')

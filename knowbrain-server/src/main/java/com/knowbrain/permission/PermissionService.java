@@ -18,12 +18,15 @@ import java.util.List;
  * 权限管理服务 — 可见性 + 部门 + 角色 三因子权限模型
  *
  * 读权限：
- *   PUBLIC  → 所有登录用户
- *   TEAM    → 部门匹配 或 Owner
- *   PRIVATE → Owner 或显式成员
+ *   ADMIN    → 全局可读（不受可见性限制）
+ *   PUBLIC   → 所有登录用户
+ *   TEAM     → 部门匹配 或 Owner
+ *   PRIVATE  → Owner 或显式成员
  *
  * 写权限：
- *   ADMIN / MANAGER / SpaceOwner → 可写
+ *   ADMIN      → 全局可写
+ *   MANAGER    → 公开空间 + 本部门团队空间 + 自己的空间
+ *   SpaceOwner → 自己的空间可写
  *
  * 检索权限过滤：
  *   getAccessibleSpaceIds(userId) → 按上述规则返回空间 ID 列表
@@ -37,10 +40,20 @@ public class PermissionService {
     private final SpaceMemberMapper memberMapper;
     private final SysUserMapper userMapper;
 
-    /** 检查用户是否有权读取空间 */
+    /**
+     * 检查用户是否有权读取空间
+     *
+     * ADMIN   → 全局可读（系统管理员不受可见性限制）
+     * PUBLIC  → 所有登录用户
+     * TEAM    → 部门匹配 或 Owner
+     * PRIVATE → Owner 或显式成员
+     */
     public void checkReadAccess(Long spaceId, Long userId) {
         Space space = spaceMapper.selectById(spaceId);
         if (space == null) throw new BizException(404, "空间不存在");
+
+        // 0. ADMIN → 全局可读
+        if ("ADMIN".equals(getUserRole(userId))) return;
 
         // 1. PUBLIC → 所有登录用户放行
         if ("PUBLIC".equals(space.getVisibility())) return;
@@ -62,17 +75,34 @@ public class PermissionService {
         if (member == null) throw new BizException(403, "无权访问此空间");
     }
 
-    /** 检查用户是否有权编辑空间（写权限 = 角色决定） */
+    /**
+     * 检查用户是否有权编辑空间（写权限 = 角色 + 空间可见性决定）
+     *
+     * ADMIN   → 全局可写
+     * MANAGER → 公开空间 + 本部门团队空间 + 自己的私有空间
+     * Owner   → 自己的空间可写
+     */
     public void checkWriteAccess(Long spaceId, Long userId) {
         Space space = spaceMapper.selectById(spaceId);
         if (space == null) throw new BizException(404, "空间不存在");
 
-        // ADMIN / MANAGER → 全部可写
+        // ADMIN → 全局可写
         String role = getUserRole(userId);
-        if ("ADMIN".equals(role) || "MANAGER".equals(role)) return;
+        if ("ADMIN".equals(role)) return;
 
         // SpaceOwner → 自己的空间可写
         if (space.getOwnerId().equals(userId)) return;
+
+        // MANAGER → 公开空间 + 本部门团队空间（不可跨部门管理）
+        if ("MANAGER".equals(role)) {
+            if ("PUBLIC".equals(space.getVisibility())) return;
+            if ("TEAM".equals(space.getVisibility())) {
+                Long userDeptId = getUserDepartmentId(userId);
+                if (userDeptId != null && isInDepartmentScope(space.getDepartmentScope(), userDeptId)) {
+                    return;
+                }
+            }
+        }
 
         throw new BizException(403, "无权编辑此空间");
     }
@@ -135,17 +165,26 @@ public class PermissionService {
     /**
      * 获取用户可读的空间 ID 列表（用于检索权限过滤）
      *
-     * 规则：
-     * - PUBLIC 空间 → 所有登录用户可见
-     * - OWNER 的空间 → 全部可见
-     * - TEAM 空间 → 部门匹配
-     * - PRIVATE 空间 → 显式成员
+     * ADMIN   → 全局所有空间可见
+     * PUBLIC  → 所有登录用户可见
+     * OWNER   → 自己的空间全部可见
+     * TEAM    → 部门匹配
+     * PRIVATE → 显式成员
      *
      * 前置条件：userId 非空（前端强制登录，AuthInterceptor 保证）
      */
     public List<Long> getAccessibleSpaceIds(Long userId) {
         List<Space> allSpaces = spaceMapper.selectList(null);
         List<Long> ids = new ArrayList<>();
+
+        // 0. ADMIN → 全局所有空间可见
+        if ("ADMIN".equals(getUserRole(userId))) {
+            for (Space s : allSpaces) {
+                ids.add(s.getId());
+            }
+            return ids;
+        }
+
         Long userDeptId = getUserDepartmentId(userId);
 
         for (Space s : allSpaces) {

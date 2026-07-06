@@ -54,8 +54,10 @@ public class UserService {
         if (username.length() < 3 || username.length() > 50) {
             throw new BizException(400, "用户名需 3-50 个字符");
         }
-        if (password.length() < 6) {
-            throw new BizException(400, "密码至少 6 位");
+        try {
+            PasswordValidator.validate(password);
+        } catch (IllegalArgumentException e) {
+            throw new BizException(400, e.getMessage());
         }
         if (userMapper.selectCount(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, username)) > 0) {
@@ -100,8 +102,10 @@ public class UserService {
     public void resetPassword(Long id, String newPassword) {
         SysUser user = userMapper.selectById(id);
         if (user == null) throw new BizException(404, "用户不存在");
-        if (newPassword == null || newPassword.isBlank() || newPassword.length() < 6) {
-            throw new BizException(400, "新密码至少 6 位");
+        try {
+            PasswordValidator.validate(newPassword);
+        } catch (IllegalArgumentException e) {
+            throw new BizException(400, e.getMessage());
         }
 
         user.setPasswordHash(BCrypt.hashpw(newPassword, BCrypt.gensalt()));

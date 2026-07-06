@@ -29,6 +29,21 @@ const router = createRouter({
           path: 'users',
           name: 'users',
           component: () => import('../views/UserView.vue')
+        },
+        {
+          path: 'scenarios',
+          name: 'scenarios',
+          component: () => import('../views/ScenarioView.vue')
+        },
+        {
+          path: 'feedback',
+          name: 'feedback',
+          component: () => import('../views/FeedbackView.vue')
+        },
+        {
+          path: 'stats',
+          name: 'stats',
+          component: () => import('../views/StatsView.vue')
         }
       ]
     },

@@ -29,22 +29,26 @@ public class QueryPreprocessor {
     public static class Result {
         private final String rewrittenQuery;
         private final String faqAnswer;
+        private final String faqQuestion;
         private final boolean faqMatched;
 
         public Result(String rewrittenQuery) {
             this.rewrittenQuery = rewrittenQuery;
             this.faqAnswer = null;
+            this.faqQuestion = null;
             this.faqMatched = false;
         }
 
-        public Result(String rewrittenQuery, String faqAnswer) {
+        public Result(String rewrittenQuery, String faqAnswer, String faqQuestion) {
             this.rewrittenQuery = rewrittenQuery;
             this.faqAnswer = faqAnswer;
+            this.faqQuestion = faqQuestion;
             this.faqMatched = true;
         }
 
         public String rewrittenQuery() { return rewrittenQuery; }
         public String faqAnswer() { return faqAnswer; }
+        public String faqQuestion() { return faqQuestion; }
         public boolean isFaqMatched() { return faqMatched; }
     }
 
@@ -56,21 +60,31 @@ public class QueryPreprocessor {
             return new Result(rawQuery);
         }
 
-        // 1. 术语映射：口语 → 正式术语
-        String rewritten = glossaryService.rewrite(rawQuery.trim());
+        String trimmed = rawQuery.trim();
 
-        // 2. 敏感词过滤
-        rewritten = sensitiveWordFilter.sanitize(rewritten);
-
-        // 3. FAQ 精确匹配（命中则短路，不调 LLM）
-        var faqResult = faqService.match(rewritten);
+        // 1. FAQ 精确匹配（在术语改写之前，避免改写破坏问题文本匹配）
+        var faqResult = faqService.match(trimmed);
         if (faqResult != null) {
+            String sanitized = sensitiveWordFilter.sanitize(trimmed);
             log.info("FAQ 命中: score={}, \"{}\"", faqResult.score(),
                     faqResult.entry().getQuestion());
-            return new Result(rewritten, faqResult.entry().getAnswer());
+            return new Result(sanitized, faqResult.entry().getAnswer(), faqResult.entry().getQuestion());
         }
 
-        if (!rewritten.equals(rawQuery.trim())) {
+        // 2. 术语映射：口语 → 正式术语
+        String rewritten = glossaryService.rewrite(trimmed);
+
+        // 3. 敏感词过滤
+        rewritten = sensitiveWordFilter.sanitize(rewritten);
+
+        // 4. 改写后再试一次 FAQ 匹配（术语改写后可能命中新关键词）
+        if (!rewritten.equals(trimmed)) {
+            faqResult = faqService.match(rewritten);
+            if (faqResult != null) {
+                log.info("FAQ 改写后命中: score={}, \"{}\"", faqResult.score(),
+                        faqResult.entry().getQuestion());
+                return new Result(rewritten, faqResult.entry().getAnswer(), faqResult.entry().getQuestion());
+            }
             log.info("查询预处理完成: 查询已被改写");
         }
         return new Result(rewritten);

@@ -1,70 +1,8 @@
 [
-  {
-    "name": "网络与连接",
-    "key": "network",
-    "children": [
-      { "name": "VPN 配置", "key": "vpn" },
-      { "name": "WiFi 无线网络", "key": "wifi" },
-      { "name": "有线网络", "key": "wired" },
-      { "name": "代理与上网", "key": "proxy" },
-      { "name": "内网访问", "key": "intranet" },
-      { "name": "远程桌面", "key": "rdp" }
-    ]
-  },
-  {
-    "name": "账号与权限",
-    "key": "account",
-    "children": [
-      { "name": "账号注册与注销", "key": "account-register" },
-      { "name": "密码重置", "key": "password-reset" },
-      { "name": "权限申请与变更", "key": "permission" },
-      { "name": "多因素认证 MFA", "key": "mfa" },
-      { "name": "访客账号", "key": "guest" }
-    ]
-  },
-  {
-    "name": "设备与硬件",
-    "key": "hardware",
-    "children": [
-      { "name": "办公电脑", "key": "pc" },
-      { "name": "打印机与扫描仪", "key": "printer" },
-      { "name": "会议室设备", "key": "meeting-room" },
-      { "name": "电话系统", "key": "phone" },
-      { "name": "硬件资产申领", "key": "asset-request" }
-    ]
-  },
-  {
-    "name": "软件与应用",
-    "key": "software",
-    "children": [
-      { "name": "Office 办公套件", "key": "office" },
-      { "name": "企业邮箱", "key": "email" },
-      { "name": "企业即时通讯", "key": "im" },
-      { "name": "浏览器与插件", "key": "browser" },
-      { "name": "开发工具", "key": "dev-tools" },
-      { "name": "设计工具", "key": "design-tools" }
-    ]
-  },
-  {
-    "name": "信息安全",
-    "key": "security",
-    "children": [
-      { "name": "数据保护", "key": "data-protection" },
-      { "name": "安全策略", "key": "security-policy" },
-      { "name": "合规与审计", "key": "compliance" },
-      { "name": "钓鱼邮件防范", "key": "anti-phishing" },
-      { "name": "病毒与勒索软件", "key": "anti-virus" }
-    ]
-  },
-  {
-    "name": "IT 服务",
-    "key": "service",
-    "children": [
-      { "name": "服务台与报修", "key": "helpdesk" },
-      { "name": "故障排查指南", "key": "troubleshoot" },
-      { "name": "IT 资产申领", "key": "it-asset" },
-      { "name": "系统维护通知", "key": "maintenance" },
-      { "name": "IT 培训资料", "key": "training" }
-    ]
-  }
+  { "name": "网络与连接", "key": "network" },
+  { "name": "账号与权限", "key": "account" },
+  { "name": "设备与硬件", "key": "hardware" },
+  { "name": "软件与应用", "key": "software" },
+  { "name": "信息安全", "key": "security" },
+  { "name": "IT 服务", "key": "service" }
 ]

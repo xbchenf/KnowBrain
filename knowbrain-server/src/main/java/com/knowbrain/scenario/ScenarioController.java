@@ -42,10 +42,10 @@ public class ScenarioController {
 
     // ==================== 分类管理 ====================
 
-    @Operation(summary = "全部分类")
+    @Operation(summary = "全部分类（树形）")
     @GetMapping("/categories")
-    public Result<List<ScenarioCategory>> listCategories() {
-        return Result.ok(categoryMapper.selectList(null));
+    public Result<List<Category>> listCategories() {
+        return Result.ok(scenarioConfig.getCategories());
     }
 
     @Operation(summary = "新增分类")

@@ -86,7 +86,8 @@
             <el-input v-model="createForm.name" placeholder="显示名称，默认同用户名" maxlength="50" />
           </el-form-item>
           <el-form-item label="手机号">
-            <el-input v-model="createForm.phone" placeholder="手机号" maxlength="20" />
+            <el-input v-model="createForm.phone" placeholder="11 位手机号，选填" maxlength="11"
+              @input="createForm.phone = filterPhoneInput(createForm.phone)" />
           </el-form-item>
           <el-form-item label="部门">
             <el-select v-model="createForm.departmentId" clearable placeholder="选择部门" style="width:100%">
@@ -117,7 +118,8 @@
             <el-input v-model="editForm.name" placeholder="显示名称" maxlength="50" />
           </el-form-item>
           <el-form-item label="手机号">
-            <el-input v-model="editForm.phone" placeholder="手机号" maxlength="20" />
+            <el-input v-model="editForm.phone" placeholder="11 位手机号，选填" maxlength="11"
+              @input="editForm.phone = filterPhoneInput(editForm.phone)" />
           </el-form-item>
           <el-form-item label="部门">
             <el-select v-model="editForm.departmentId" clearable placeholder="选择部门" style="width:100%">
@@ -194,8 +196,12 @@ const resetForm = ref({ password: '' })
 
 // ================== 初始化 ==================
 onMounted(async () => {
-  const deptRes = await listDepartments()
-  departments.value = flatten(deptRes.data?.data || [])
+  try {
+    const deptRes = await listDepartments()
+    departments.value = flatten(deptRes.data?.data || [])
+  } catch (e) {
+    console.error('加载部门列表失败:', e)
+  }
   load()
 })
 
@@ -234,6 +240,16 @@ function deptName(id: number) {
   return departments.value.find((d: any) => d.id === id)?.name || '-'
 }
 
+/** 校验中国大陆手机号（11 位，1 开头，可选） */
+function validPhone(phone: string): boolean {
+  return /^1[3-9]\d{9}$/.test(phone)
+}
+
+/** 输入时仅保留数字 */
+function filterPhoneInput(val: string) {
+  return val.replace(/\D/g, '').slice(0, 11)
+}
+
 // ================== 新建用户 ==================
 function openCreate() {
   createForm.value = { username: '', password: '', name: '', phone: '', departmentId: null, role: 'USER' }
@@ -245,6 +261,7 @@ async function doCreate() {
   if (!f.username.trim()) return ElMessage.warning('请输入用户名')
   if (f.username.trim().length < 3) return ElMessage.warning('用户名至少 3 个字符')
   if (!f.password || f.password.length < 6) return ElMessage.warning('密码至少 6 位')
+  if (f.phone.trim() && !validPhone(f.phone.trim())) return ElMessage.warning('请输入正确的手机号')
 
   submitting.value = true
   try {
@@ -281,6 +298,7 @@ function openEdit(row: any) {
 
 async function doEdit() {
   const f = editForm.value
+  if (f.phone.trim() && !validPhone(f.phone.trim())) return ElMessage.warning('请输入正确的手机号')
   submitting.value = true
   try {
     await updateUser(f.id, {

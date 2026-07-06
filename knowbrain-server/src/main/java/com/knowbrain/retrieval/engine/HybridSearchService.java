@@ -61,19 +61,29 @@ public class HybridSearchService {
      */
     @Deprecated
     public List<SearchResult> search(String query, int topK) {
-        return search(query, topK, Collections.emptyList());
+        return search(query, topK, Collections.emptyList(), null);
     }
 
     /**
      * 混合检索 Top-K（带空间权限过滤）
-     *
-     * @param query    用户问题
-     * @param topK     返回结果数
-     * @param spaceIds 用户可访问的空间 ID 列表（空列表 = 不过滤）
      */
     @Retryable(retryFor = Exception.class, maxAttempts = 2,
                backoff = @Backoff(delay = 1000))
     public List<SearchResult> search(String query, int topK, List<Long> spaceIds) {
+        return search(query, topK, spaceIds, null);
+    }
+
+    /**
+     * 混合检索 Top-K（带空间权限过滤 + 可选分类过滤）
+     *
+     * @param query    用户问题
+     * @param topK     返回结果数
+     * @param spaceIds 用户可访问的空间 ID 列表（空列表 = 不过滤）
+     * @param category 分类 key（null = 不过滤）
+     */
+    @Retryable(retryFor = Exception.class, maxAttempts = 2,
+               backoff = @Backoff(delay = 1000))
+    public List<SearchResult> search(String query, int topK, List<Long> spaceIds, String category) {
         if (query == null || query.isBlank()) {
             return Collections.emptyList();
         }
@@ -81,8 +91,12 @@ public class HybridSearchService {
         // 多拉一些候选，补偿后置过滤的损失
         int fetchK = spaceIds != null && !spaceIds.isEmpty() ? topK * 3 : topK;
 
+        long t0 = System.currentTimeMillis();
+
         // 1. Dense 向量检索准备
         float[] queryEmbedding = embedQuery(query);
+        long tEmbed = System.currentTimeMillis();
+
         FloatVec denseVec = new FloatVec(toList(queryEmbedding));
 
         // 2. Sparse 向量（BM25）检索准备
@@ -115,6 +129,7 @@ public class HybridSearchService {
                 .build();
 
         SearchResp resp = milvusClient.hybridSearch(hybridReq);
+        long tMilvus = System.currentTimeMillis();
 
         // 5. 映射结果 + 权限过滤
         boolean filterBySpace = spaceIds != null && !spaceIds.isEmpty();
@@ -145,6 +160,12 @@ public class HybridSearchService {
                         continue;
                     }
 
+                    // 分类过滤（可选）
+                    if (category != null && !category.isBlank()
+                            && (ekDoc.getCategory() == null || !category.equals(ekDoc.getCategory()))) {
+                        continue;
+                    }
+
                     SearchResult result = new SearchResult();
                     result.setContent(stringValue(entity.get("content")));
                     result.setDocumentTitle(stringValue(entity.get("title")));
@@ -160,8 +181,12 @@ public class HybridSearchService {
             }
         }
 
-        log.debug("混合检索完成: query=\"{}\", {} 条结果 (filterBySpace={})",
-                query, results.size(), filterBySpace);
+        long tFilter = System.currentTimeMillis();
+
+        log.debug("[检索耗时] embed={}ms milvus={}ms filter={}ms total={}ms query=\"{}\" results={} filterBySpace={} category={}",
+                tEmbed - t0, tMilvus - tEmbed, tFilter - tMilvus, tFilter - t0,
+                query, results.size(), filterBySpace,
+                category != null && !category.isBlank() ? category : "-");
         return results;
     }
 

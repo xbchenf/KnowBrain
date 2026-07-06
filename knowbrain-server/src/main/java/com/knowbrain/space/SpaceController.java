@@ -55,6 +55,9 @@ public class SpaceController {
         Long userId = getUserId(req);
         permissionService.checkReadAccess(id, userId);
         Space space = spaceService.getById(id);
+        // 服务端判断当前用户是否可管理此空间
+        String role = (String) req.getAttribute("role");
+        space.setIsOwner("ADMIN".equals(role) || space.getOwnerId().equals(userId));
         return Result.ok(space);
     }
 

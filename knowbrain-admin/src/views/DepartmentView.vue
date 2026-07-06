@@ -30,12 +30,16 @@
 
         <div v-if="selected.id" class="stat-row">
           <div class="stat-item">
-            <div class="stat-value">{{ selected.childCount ?? 0 }}</div>
-            <div class="stat-label">子部门</div>
+            <div class="stat-value">{{ selected.directMemberCount ?? 0 }}</div>
+            <div class="stat-label">本部成员</div>
           </div>
           <div class="stat-item">
             <div class="stat-value">{{ selected.memberCount ?? 0 }}</div>
-            <div class="stat-label">成员</div>
+            <div class="stat-label">成员（含下级）</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">{{ selected.childCount ?? 0 }}</div>
+            <div class="stat-label">子部门（含下级）</div>
           </div>
         </div>
 

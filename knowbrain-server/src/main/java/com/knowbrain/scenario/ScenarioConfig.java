@@ -48,8 +48,10 @@ public class ScenarioConfig {
 
         for (ScenarioCategory row : rows) {
             Category node = new Category();
+            node.setId(row.getId());
             node.setName(row.getName());
             node.setKey(row.getKey());
+            node.setParentKey(row.getParentKey());
             node.setChildren(new ArrayList<>());
             nodeMap.put(row.getKey(), node);
 

@@ -1,71 +1,8 @@
 [
-  {
-    "name": "入职与离职",
-    "key": "onboarding-offboarding",
-    "children": [
-      { "name": "入职流程", "key": "onboarding" },
-      { "name": "离职流程", "key": "offboarding" },
-      { "name": "试用期管理", "key": "probation" },
-      { "name": "背景调查", "key": "background-check" },
-      { "name": "合同签署", "key": "contract-signing" }
-    ]
-  },
-  {
-    "name": "薪酬与福利",
-    "key": "compensation",
-    "children": [
-      { "name": "工资与发薪", "key": "salary" },
-      { "name": "奖金与绩效", "key": "bonus" },
-      { "name": "五险一金", "key": "social-insurance" },
-      { "name": "补充商业保险", "key": "commercial-insurance" },
-      { "name": "股票期权", "key": "stock-options" },
-      { "name": "专项附加扣除", "key": "tax-deduction" }
-    ]
-  },
-  {
-    "name": "假期与考勤",
-    "key": "leave-attendance",
-    "children": [
-      { "name": "法定年假", "key": "annual-leave" },
-      { "name": "病假", "key": "sick-leave" },
-      { "name": "婚假/产假/陪产假", "key": "marriage-maternity" },
-      { "name": "事假", "key": "personal-leave" },
-      { "name": "考勤打卡", "key": "attendance" },
-      { "name": "加班与调休", "key": "overtime" },
-      { "name": "弹性工作", "key": "flexible-work" }
-    ]
-  },
-  {
-    "name": "培训与发展",
-    "key": "training-development",
-    "children": [
-      { "name": "新员工培训", "key": "new-hire-training" },
-      { "name": "职业技能提升", "key": "skill-upgrade" },
-      { "name": "学历教育资助", "key": "education-sponsor" },
-      { "name": "内部竞聘与转岗", "key": "internal-transfer" },
-      { "name": "导师制度", "key": "mentorship" }
-    ]
-  },
-  {
-    "name": "绩效考核",
-    "key": "performance",
-    "children": [
-      { "name": "OKR / KPI 设定", "key": "goal-setting" },
-      { "name": "季度考核", "key": "quarterly-review" },
-      { "name": "年度考核", "key": "annual-review" },
-      { "name": "晋升与调薪", "key": "promotion" },
-      { "name": "绩效改进计划", "key": "pip" }
-    ]
-  },
-  {
-    "name": "员工关系",
-    "key": "employee-relations",
-    "children": [
-      { "name": "劳动合同管理", "key": "labor-contract" },
-      { "name": "保密与竞业限制", "key": "non-compete" },
-      { "name": "投诉与申诉", "key": "grievance" },
-      { "name": "职场行为准则", "key": "code-of-conduct" },
-      { "name": "员工活动与关怀", "key": "employee-care" }
-    ]
-  }
+  { "name": "入职与离职", "key": "onboarding-offboarding" },
+  { "name": "薪酬与福利", "key": "compensation" },
+  { "name": "假期与考勤", "key": "leave-attendance" },
+  { "name": "培训与发展", "key": "training-development" },
+  { "name": "绩效考核", "key": "performance" },
+  { "name": "员工关系", "key": "employee-relations" }
 ]

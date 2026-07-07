@@ -70,9 +70,7 @@ rag:
     enabled: false
     ttl-minutes: 0
 
-# 场景种子数据（测试不加载 JSON）
-scenario:
-  seed-path: classpath:scenarios/it-helpdesk
+# 场景种子数据（由 ScenarioDataInitializer 加载，测试环境不加载 JSON）
 
 # MyBatis-Plus
 mybatis-plus:

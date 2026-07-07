@@ -71,7 +71,7 @@ for i in $(seq 1 60); do
         echo -e "  管理后台:  ${GREEN}http://localhost/admin${NC}"
         echo -e "  MinIO 控制台: ${GREEN}http://localhost:9001${NC}"
         echo ""
-        echo -e "  默认管理员: admin / admin123"
+        echo -e "  默认管理员: admin / KnowBrain@2026"
         echo ""
         echo -e "  查看日志: $COMPOSE logs -f"
         echo -e "  停止服务: $COMPOSE down"

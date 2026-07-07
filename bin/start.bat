@@ -65,7 +65,7 @@ echo   问答界面:  http://localhost
 echo   管理后台:  http://localhost/admin
 echo   MinIO:    http://localhost:9001
 echo.
-echo   默认管理员: admin / admin123
+echo   默认管理员: admin / KnowBrain@2026
 echo.
 echo   查看日志: %COMPOSE% logs -f
 echo   停止服务: %COMPOSE% down

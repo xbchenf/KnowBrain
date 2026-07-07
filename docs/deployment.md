@@ -60,7 +60,7 @@ bin\start.bat
 | http://localhost:9001 | MinIO 控制台（文件存储管理） |
 | http://localhost:3000 | Grafana 监控看板（需启用 monitoring profile） |
 
-**默认管理员账户**：`admin` / `admin123`
+**默认管理员账户**：`admin` / `KnowBrain@2026`
 
 ---
 

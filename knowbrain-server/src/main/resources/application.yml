@@ -107,10 +107,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
-# 场景配置
-# 场景配置（种子数据路径，仅首次启动导入 DB 时使用）
-scenario:
-  seed-path: ${SCENARIO_SEED_PATH:classpath:scenarios/it-helpdesk}
+# 场景配置（种子数据由 ScenarioDataInitializer 加载 it-helpdesk + hr-policy）
 
 # RAG 问答缓存
 rag:

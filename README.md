@@ -189,9 +189,9 @@ knowbrain/
 │   ├── src/
 │   │   ├── layouts/
 │   │   │   ├── WebLayout.vue     # Q&A 问答布局（对话/文档库侧边栏）
-│   │   │   └── AdminLayout.vue   # 管理后台布局
 │   │   └── views/
 │   │       ├── ChatView.vue         # 对话问答页
+│   │       ├── AdminLayout.vue   # 管理后台布局
 │   │       ├── DocBrowseView.vue    # 文档浏览页
 │   │       ├── DashboardView.vue    # 统计看板
 │   │       ├── UserView.vue         # 用户管理

@@ -22,7 +22,7 @@
 ### 一套代码，开箱即用
 
 - **平台引擎**：通用文档解析 → 向量化 → 混合检索 → RAG 生成，不绑定行业
-- **场景配置（种子数据）**：IT 运维模板 + 术语词典 + 高频问答对，启动时加载
+- **场景配置（种子数据）**：IT 运维 + HR 制度模板，含术语词典 + 高频问答对，启动时加载
 
 **不是两套系统。** 场景包是数据，不是代码。装不同种子数据 = 不同场景效果。
 
@@ -89,7 +89,7 @@ knowbrain-server/
 │   ├── retrieval/           # 检索引擎（混合检索 + Reranker）
 │   │   ├── engine/          # 检索流水线
 │   │   ├── vector/          # Milvus 向量检索
-│   │   ├── keyword/         # ES/BM25 关键词检索
+│   │   ├── keyword/         # BM25 关键词检索
 │   │   └── rerank/          # 重排序
 │   ├── generation/          # LLM 生成（Prompt 拼装 + 溯源 + 后检）
 │   ├── permission/          # 文档级权限管控
@@ -115,9 +115,9 @@ knowbrain-web/
 │   ├── api/                 # 统一 API 层（问答 + 管理）
 │   ├── layouts/
 │   │   ├── WebLayout.vue    # Q&A 问答布局
-│   │   └── AdminLayout.vue  # 管理后台布局
 │   └── views/               # 全部视图页面
 │       ├── ChatView.vue     # 对话问答
+│       ├── AdminLayout.vue  # 管理后台布局
 │       ├── DocBrowseView.vue # 文档浏览
 │       ├── DashboardView.vue # 管理仪表盘
 │       └── ...              # 其他管理页面

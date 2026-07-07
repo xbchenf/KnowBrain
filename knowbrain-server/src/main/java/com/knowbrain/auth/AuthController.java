@@ -2,6 +2,8 @@ package com.knowbrain.auth;
 
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.knowbrain.audit.Auditable;
+import com.knowbrain.common.RAGMetrics;
 import com.knowbrain.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,6 +27,8 @@ public class AuthController {
     private final SysUserMapper userMapper;
     private final JwtUtil jwtUtil;
     private final LoginRateLimiter rateLimiter;
+    private final TokenBlacklistService blacklistService;
+    private final RAGMetrics metrics;
 
     @Operation(summary = "登录", description = "用户名密码登录，返回 JWT Token")
     @PostMapping("/login")
@@ -52,6 +56,7 @@ public class AuthController {
 
         if (user == null || !BCrypt.checkpw(password, user.getPasswordHash())) {
             rateLimiter.recordFailure(ip);
+            metrics.recordLoginFailure();
             return Result.fail(401, "用户名或密码错误");
         }
 
@@ -118,6 +123,22 @@ public class AuthController {
                 "name", user.getName(),
                 "role", "USER"
         ));
+    }
+
+    @Operation(summary = "退出登录", description = "将当前 Token 加入黑名单，立即失效")
+    @Auditable(operation = "OTHER", resourceType = "AUTH", description = "用户退出登录")
+    @PostMapping("/logout")
+    public Result<Void> logout(HttpServletRequest servletRequest) {
+        String authHeader = servletRequest.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            String jti = jwtUtil.getJti(token);
+            long exp = jwtUtil.getExp(token);
+            if (jti != null && exp > 0) {
+                blacklistService.add(jti, exp);
+            }
+        }
+        return Result.ok("已退出登录", null);
     }
 
     private String getClientIp(HttpServletRequest request) {

@@ -1,5 +1,6 @@
 package com.knowbrain.space;
 
+import com.knowbrain.audit.Auditable;
 import com.knowbrain.common.Result;
 import com.knowbrain.permission.PermissionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,6 +28,9 @@ public class SpaceController {
     private final PermissionService permissionService;
 
     @Operation(summary = "创建空间")
+    @Auditable(operation = "CREATE", resourceType = "SPACE",
+               resourceId = "#result.data.id", resourceName = "#request['name']",
+               description = "创建空间")
     @PostMapping
     public Result<Space> create(@RequestBody Map<String, Object> request,
                                  HttpServletRequest servletRequest) {
@@ -71,6 +75,8 @@ public class SpaceController {
     }
 
     @Operation(summary = "更新空间信息")
+    @Auditable(operation = "UPDATE", resourceType = "SPACE",
+               resourceId = "#id", description = "更新空间")
     @PutMapping("/{id}")
     public Result<Space> update(@PathVariable Long id,
                                  @RequestBody Map<String, Object> request,
@@ -94,6 +100,8 @@ public class SpaceController {
     }
 
     @Operation(summary = "删除空间")
+    @Auditable(operation = "DELETE", resourceType = "SPACE",
+               resourceId = "#id", description = "删除空间")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id, HttpServletRequest req) {
         Long userId = getUserId(req);
@@ -117,6 +125,8 @@ public class SpaceController {
     }
 
     @Operation(summary = "添加成员")
+    @Auditable(operation = "CREATE", resourceType = "SPACE_MEMBER",
+               resourceId = "#id", description = "添加空间成员")
     @PostMapping("/{id}/members")
     public Result<Void> addMember(@PathVariable Long id,
                                    @RequestBody Map<String, Object> body,
@@ -134,6 +144,8 @@ public class SpaceController {
     }
 
     @Operation(summary = "移除成员")
+    @Auditable(operation = "DELETE", resourceType = "SPACE_MEMBER",
+               resourceId = "#id", description = "移除空间成员")
     @DeleteMapping("/{id}/members/{memberUserId}")
     public Result<Void> removeMember(@PathVariable Long id,
                                       @PathVariable Long memberUserId,

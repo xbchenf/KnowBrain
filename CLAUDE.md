@@ -48,12 +48,12 @@
 | AI 编排 | Spring AI 1.0+ | 统一 LLM 调用抽象 |
 | LLM | Qwen-Max / DeepSeek-V3 | DashScope/DeepSeek API，OpenAI 兼容协议 |
 | 向量数据库 | Milvus 2.4 | 语义检索 |
-| 搜索引擎 | Elasticsearch 8.x（可选） | BM25 关键词检索增强 |
 | 关系数据库 | MySQL 8.0 | 文档元数据、用户、权限、反馈 |
 | 缓存 | Redis 7 | 高频问答缓存、会话状态 |
 | 对象存储 | MinIO | 原始文档存储 |
 | 文档解析 | Apache Tika 2.x | PDF/Word/TXT/Markdown 多格式解析 |
-| 前端 | Vue 3 + Element Plus | SPA |
+| 前端 | Vue 3 + Element Plus | 统一前端（Q&A 问答 + 管理后台） |
+| 监控 | Prometheus + Grafana | JVM 指标 / RAG 性能看板（可选，profile 启用） |
 | 部署 | Docker Compose | 一键部署 |
 
 ---
@@ -63,7 +63,7 @@
 ```
 用户问题
    → 查询预处理（LLM 改写 + 术语映射 + 敏感词过滤）
-   → 混合检索（Milvus 语义 + ES BM25 关键词）
+   → 混合检索（Milvus 语义 + BM25 关键词）
    → 粗排 → Reranker 精排
    → LLM 生成 + 引用标注 + 置信度判断
    → 答案 + 溯源 → 返回用户
@@ -80,6 +80,7 @@ knowbrain-server/
 │   ├── config/              # 框架配置
 │   ├── common/              # Result、全局异常处理
 │   ├── auth/                # JWT 认证、权限拦截
+│   ├── audit/                # 审计日志（AOP 操作记录）
 │   ├── document/            # 文档上传、解析、分块、管理
 │   │   ├── entity/
 │   │   ├── mapper/
@@ -107,8 +108,26 @@ knowbrain-server/
 │       │   └── faq.json
 │       └── hr-policy/       # HR 制度场景包（规划中）
 └── docker/
-    ├── docker-compose.yml
-    └── mysql/init/
+    └── mysql/init/          # 数据库初始化 SQL
+
+knowbrain-web/
+├── src/
+│   ├── api/                 # 统一 API 层（问答 + 管理）
+│   ├── layouts/
+│   │   ├── WebLayout.vue    # Q&A 问答布局
+│   │   └── AdminLayout.vue  # 管理后台布局
+│   └── views/               # 全部视图页面
+│       ├── ChatView.vue     # 对话问答
+│       ├── DocBrowseView.vue # 文档浏览
+│       ├── DashboardView.vue # 管理仪表盘
+│       └── ...              # 其他管理页面
+├── Dockerfile
+└── nginx.conf
+
+docker/
+├── nginx/nginx.conf         # 网关反向代理
+├── prometheus/prometheus.yml # Prometheus 指标采集配置
+└── grafana/dashboards/      # Grafana 仪表盘（JVM + RAG）
 ```
 
 ---

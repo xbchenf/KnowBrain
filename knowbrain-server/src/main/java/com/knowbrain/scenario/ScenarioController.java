@@ -1,5 +1,6 @@
 package com.knowbrain.scenario;
 
+import com.knowbrain.audit.Auditable;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.common.Result;
 import com.knowbrain.scenario.entity.ScenarioCategory;
@@ -49,6 +50,8 @@ public class ScenarioController {
     }
 
     @Operation(summary = "新增分类")
+    @Auditable(operation = "CREATE", resourceType = "SCENARIO_CATEGORY",
+               resourceName = "#category.name", description = "新增知识分类")
     @PostMapping("/categories")
     public Result<Void> addCategory(@RequestBody ScenarioCategory category,
                                      HttpServletRequest request) {
@@ -59,6 +62,8 @@ public class ScenarioController {
     }
 
     @Operation(summary = "删除分类")
+    @Auditable(operation = "DELETE", resourceType = "SCENARIO_CATEGORY",
+               resourceId = "#id", description = "删除知识分类")
     @DeleteMapping("/categories/{id}")
     public Result<Void> deleteCategory(@PathVariable Long id,
                                         HttpServletRequest request) {
@@ -77,6 +82,8 @@ public class ScenarioController {
     }
 
     @Operation(summary = "新增术语")
+    @Auditable(operation = "CREATE", resourceType = "SCENARIO_GLOSSARY",
+               resourceName = "#glossary.term", description = "新增术语")
     @PostMapping("/glossary")
     public Result<Void> addGlossary(@RequestBody ScenarioGlossary glossary,
                                      HttpServletRequest request) {
@@ -87,6 +94,8 @@ public class ScenarioController {
     }
 
     @Operation(summary = "删除术语")
+    @Auditable(operation = "DELETE", resourceType = "SCENARIO_GLOSSARY",
+               resourceId = "#id", description = "删除术语")
     @DeleteMapping("/glossary/{id}")
     public Result<Void> deleteGlossary(@PathVariable Long id,
                                         HttpServletRequest request) {
@@ -105,6 +114,8 @@ public class ScenarioController {
     }
 
     @Operation(summary = "新增 FAQ")
+    @Auditable(operation = "CREATE", resourceType = "SCENARIO_FAQ",
+               resourceName = "#faq.question", description = "新增FAQ")
     @PostMapping("/faq")
     public Result<Void> addFaq(@RequestBody ScenarioFaq faq,
                                 HttpServletRequest request) {
@@ -116,6 +127,8 @@ public class ScenarioController {
     }
 
     @Operation(summary = "更新 FAQ")
+    @Auditable(operation = "UPDATE", resourceType = "SCENARIO_FAQ",
+               resourceId = "#id", description = "更新FAQ")
     @PutMapping("/faq/{id}")
     public Result<Void> updateFaq(@PathVariable Long id,
                                    @RequestBody ScenarioFaq faq,
@@ -128,6 +141,8 @@ public class ScenarioController {
     }
 
     @Operation(summary = "删除 FAQ")
+    @Auditable(operation = "DELETE", resourceType = "SCENARIO_FAQ",
+               resourceId = "#id", description = "删除FAQ")
     @DeleteMapping("/faq/{id}")
     public Result<Void> deleteFaq(@PathVariable Long id,
                                    HttpServletRequest request) {

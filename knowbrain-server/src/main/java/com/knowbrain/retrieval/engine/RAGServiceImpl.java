@@ -1,5 +1,6 @@
 package com.knowbrain.retrieval.engine;
 
+import com.knowbrain.common.RAGMetrics;
 import com.knowbrain.common.RequestContext;
 import com.knowbrain.statistics.SearchLog;
 import com.knowbrain.statistics.SearchLogMapper;
@@ -33,6 +34,7 @@ public class RAGServiceImpl implements RAGService {
     private final RAGCacheService cacheService;
     private final SearchLogMapper searchLogMapper;
     private final RequestContext requestContext;
+    private final RAGMetrics metrics;
 
     @Value("classpath:prompts/rag-system.txt")
     private Resource promptTemplate;
@@ -42,13 +44,15 @@ public class RAGServiceImpl implements RAGService {
                           QueryPreprocessor preprocessor,
                           RAGCacheService cacheService,
                           SearchLogMapper searchLogMapper,
-                          RequestContext requestContext) {
+                          RequestContext requestContext,
+                          RAGMetrics metrics) {
         this.hybridSearchService = hybridSearchService;
         this.chatClient = chatClientBuilder.build();
         this.preprocessor = preprocessor;
         this.cacheService = cacheService;
         this.searchLogMapper = searchLogMapper;
         this.requestContext = requestContext;
+        this.metrics = metrics;
     }
 
     @Override
@@ -65,11 +69,14 @@ public class RAGServiceImpl implements RAGService {
     public ChatResponse chat(String question, List<Long> spaceIds, List<Map<String, String>> history, String category) {
         long tStart = System.currentTimeMillis();
         long tPreprocess = tStart, tCacheCheck = tStart, tSearch = tStart, tLlm = tStart, tCacheWrite = tStart;
+        var requestSample = io.micrometer.core.instrument.Timer.start();
 
         // 0. Redis 缓存检查（有历史或分类过滤时不缓存）
         if (history.isEmpty() && (category == null || category.isBlank())) {
             ChatResponse cached = cacheService.get(question, spaceIds);
             if (cached != null) {
+                metrics.recordCacheHit();
+                requestSample.stop(metrics.requestTimer());
                 log.debug("[RAG耗时] cache=hit total={}ms question=\"{}\"",
                         System.currentTimeMillis() - tStart, question);
                 return cached;
@@ -83,12 +90,14 @@ public class RAGServiceImpl implements RAGService {
 
         // 2. FAQ 命中 → 直接返回预设答案（短路，不依赖 LLM）
         if (pre.isFaqMatched()) {
+            metrics.recordFaqHit();
             var faqSource = new ChatResponse.SourceInfo(
                     "📋 知识库预设问答", null, null,
                     pre.faqQuestion() + " — 该回答来自知识库预设的高频问答，由人工维护更新");
             ChatResponse response = new ChatResponse(pre.faqAnswer(), List.of(faqSource), false, "high");
             int total = (int)(System.currentTimeMillis() - tStart);
             saveSearchLog(question, pre.faqAnswer(), 1, "high", true, spaceIds, category, total, null);
+            requestSample.stop(metrics.requestTimer());
             log.debug("[RAG耗时] preprocess={}ms total={}ms faq=hit question=\"{}\"",
                     tPreprocess - tCacheCheck, total, question);
             return response;
@@ -97,16 +106,20 @@ public class RAGServiceImpl implements RAGService {
         String processed = pre.rewrittenQuery();
 
         // 3. 混合检索 Top-5 相关切片（带空间过滤 + 可选分类过滤）
+        var searchSample = io.micrometer.core.instrument.Timer.start();
         List<SearchResult> sources = hybridSearchService.search(processed, 5, spaceIds, category);
+        searchSample.stop(metrics.searchTimer());
         tSearch = System.currentTimeMillis();
 
         // 4. 无结果 → 兜底
         if (sources.isEmpty()) {
+            metrics.recordEmpty();
             ChatResponse response = new ChatResponse(
                     "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。",
                     Collections.emptyList(), true, "low");
             int total = (int)(System.currentTimeMillis() - tStart);
             saveSearchLog(question, response.getAnswer(), 0, "low", false, spaceIds, category, total, null);
+            requestSample.stop(metrics.requestTimer());
             log.debug("[RAG耗时] cache={}ms preprocess={}ms search={}ms total={}ms results=0 question=\"{}\"",
                     tCacheCheck - tStart, tPreprocess - tCacheCheck, tSearch - tPreprocess, total, question);
             return response;
@@ -123,6 +136,7 @@ public class RAGServiceImpl implements RAGService {
         // 6. 加载 Prompt 模板 + 调用 LLM（流式聚合，比阻塞调用更稳定）
         String prompt = buildPrompt(context.toString(), question, history);
         String answer;
+        var llmSample = io.micrometer.core.instrument.Timer.start();
         try {
             answer = chatClient.prompt().user(prompt)
                     .stream()
@@ -130,10 +144,13 @@ public class RAGServiceImpl implements RAGService {
                     .collectList()
                     .map(list -> String.join("", list))
                     .block(Duration.ofSeconds(120));
+            llmSample.stop(metrics.llmTimer());
             if (answer == null || answer.isEmpty()) {
                 throw new RuntimeException("LLM 流式聚合结果为空（超时或 API 无响应）");
             }
         } catch (Exception e) {
+            llmSample.stop(metrics.llmTimer());
+            metrics.recordFallback();
             log.error("LLM 调用失败，降级返回检索原文: {}", e.getMessage());
             long tDegrade = System.currentTimeMillis();
             String fallback = buildFallbackAnswer(sources);
@@ -145,6 +162,7 @@ public class RAGServiceImpl implements RAGService {
             ChatResponse response = new ChatResponse(fallback, fallbackSources, true, "low");
             int total = (int)(System.currentTimeMillis() - tStart);
             saveSearchLog(question, response.getAnswer(), sources.size(), "low", false, spaceIds, category, total, collectSourceTitles(sources));
+            requestSample.stop(metrics.requestTimer());
             log.debug("[RAG耗时] cache={}ms preprocess={}ms search={}ms llm=FAIL({}ms) degrade={}ms total={}ms results={} fallback=true question=\"{}\"",
                     tCacheCheck - tStart, tPreprocess - tCacheCheck, tSearch - tPreprocess,
                     tDegrade - tSearch, System.currentTimeMillis() - tDegrade, total, sources.size(), question);
@@ -175,6 +193,8 @@ public class RAGServiceImpl implements RAGService {
         tCacheWrite = System.currentTimeMillis();
 
         // 9. 写入搜索日志
+        metrics.recordSuccess();
+        requestSample.stop(metrics.requestTimer());
         int total = (int)(System.currentTimeMillis() - tStart);
         saveSearchLog(question, answer, sources.size(), confidence, false, spaceIds, category, total, collectSourceTitles(sources));
 
@@ -193,11 +213,14 @@ public class RAGServiceImpl implements RAGService {
     @Override
     public StreamContext chatStream(String question, List<Long> spaceIds, List<Map<String, String>> history, String category) {
         long startMs = System.currentTimeMillis();
+        var requestSample = io.micrometer.core.instrument.Timer.start();
 
         // 0. Redis 缓存检查（有历史或分类过滤时跳过缓存）
         if (history.isEmpty() && (category == null || category.isBlank())) {
             ChatResponse cached = cacheService.get(question, spaceIds);
             if (cached != null) {
+                metrics.recordCacheHit();
+                requestSample.stop(metrics.requestTimer());
                 List<SearchResult> cachedSources = cached.getSources() != null
                         ? cached.getSources().stream()
                             .map(s -> new SearchResult(s.getText(), s.getTitle(),
@@ -215,6 +238,8 @@ public class RAGServiceImpl implements RAGService {
 
         // 2. FAQ 命中 → 短路返回预设答案，附虚拟溯源
         if (pre.isFaqMatched()) {
+            metrics.recordFaqHit();
+            requestSample.stop(metrics.requestTimer());
             SearchResult faqSource = new SearchResult(
                     pre.faqQuestion() + " — 该回答来自知识库预设的高频问答，由人工维护更新",
                     "📋 知识库预设问答", null, null, 1.0);
@@ -227,10 +252,14 @@ public class RAGServiceImpl implements RAGService {
         String processed = pre.rewrittenQuery();
 
         // 3. 混合检索（带空间过滤 + 可选分类过滤）
+        var searchSample = io.micrometer.core.instrument.Timer.start();
         List<SearchResult> sources = hybridSearchService.search(processed, 5, spaceIds, category);
+        searchSample.stop(metrics.searchTimer());
 
         // 4. 无结果 → 兜底
         if (sources.isEmpty()) {
+            metrics.recordEmpty();
+            requestSample.stop(metrics.requestTimer());
             String fallbackMsg = "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。";
             saveSearchLog(question, fallbackMsg, 0, "low", false, spaceIds, category, (int)(System.currentTimeMillis() - startMs), null);
             return new StreamContext(
@@ -249,11 +278,20 @@ public class RAGServiceImpl implements RAGService {
         String prompt = buildPrompt(context.toString(), question, history);
 
         // 6. LLM 流式生成
+        var llmSample = io.micrometer.core.instrument.Timer.start();
         Flux<String> tokenFlux = chatClient.prompt()
                 .user(prompt)
                 .stream()
                 .content()
+                .doOnComplete(() -> {
+                    llmSample.stop(metrics.llmTimer());
+                    metrics.recordSuccess();
+                    requestSample.stop(metrics.requestTimer());
+                })
                 .onErrorResume(e -> {
+                    llmSample.stop(metrics.llmTimer());
+                    metrics.recordFallback();
+                    requestSample.stop(metrics.requestTimer());
                     log.error("LLM 流式调用失败，降级返回检索原文: {}", e.getMessage());
                     String fb = buildFallbackAnswer(sources);
                     return Flux.just(fb);

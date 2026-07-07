@@ -2,7 +2,7 @@
   <div class="admin-layout">
     <el-header class="admin-header">
       <div class="header-left">
-        <el-button text @click="$router.push('/dashboard')">
+        <el-button text @click="$router.push('/admin/dashboard')">
           <el-icon><ArrowLeft /></el-icon> 返回
         </el-button>
         <h2>{{ space.name || '空间详情' }}</h2>
@@ -343,7 +343,7 @@ async function loadSpace() {
     // 解析已保存的 departmentScope（逗号分隔 → 数字数组）
     const scope = space.value.departmentScope
     editForm.departmentScope = scope ? scope.split(',').map(Number).filter((n: number) => !isNaN(n)) : []
-  } catch { router.push('/dashboard') }
+  } catch { router.push('/admin/dashboard') }
 }
 
 async function loadDocuments() {
@@ -457,7 +457,7 @@ async function doDeleteSpace() {
       '危险操作', { type: 'error', confirmButtonText: '确认删除' })
     await deleteSpace(spaceId)
     ElMessage.success('空间已删除')
-    router.push('/dashboard')
+    router.push('/admin/dashboard')
   } catch { /* cancelled */ }
 }
 

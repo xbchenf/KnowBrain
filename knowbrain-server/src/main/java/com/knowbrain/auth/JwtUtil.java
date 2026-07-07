@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * JWT 令牌工具类 — 基于 Hutool JWTUtil (HS256)
@@ -24,17 +25,45 @@ public class JwtUtil {
     private int expireHours;
 
     /**
-     * 生成 JWT Token
+     * 生成 JWT Token（含唯一 jti，用于黑名单机制）
      */
     public String createToken(Long userId, String username, String role) {
         long now = System.currentTimeMillis() / 1000;
+        String jti = UUID.randomUUID().toString().replace("-", "");
         Map<String, Object> payload = new HashMap<>();
+        payload.put("jti", jti);
         payload.put("userId", userId);
         payload.put("username", username);
         payload.put("role", role);
         payload.put("iat", now);
         payload.put("exp", now + expireHours * 3600L);
         return JWTUtil.createToken(payload, secret.getBytes());
+    }
+
+    /**
+     * 从 Token 中提取 jti（不验证有效期，用于提取黑名单标识）
+     */
+    public String getJti(String token) {
+        try {
+            JWT jwt = JWTUtil.parseToken(token);
+            Object jti = jwt.getPayload("jti");
+            return jti != null ? jti.toString() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 从 Token 中提取过期时间（秒级时间戳），解析失败返回 0
+     */
+    public long getExp(String token) {
+        try {
+            JWT jwt = JWTUtil.parseToken(token);
+            Object exp = jwt.getPayload("exp");
+            return exp instanceof Number ? ((Number) exp).longValue() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /**
@@ -67,6 +96,9 @@ public class JwtUtil {
             claims.put("userId", uidVal instanceof Number ? ((Number) uidVal).longValue() : uidVal);
             claims.put("username", jwt.getPayload("username"));
             claims.put("role", jwt.getPayload("role"));
+            // iat 用于用户级 Token 失效检测（禁用/改密后生效）
+            Object iatVal = jwt.getPayload("iat");
+            claims.put("iat", iatVal instanceof Number ? ((Number) iatVal).longValue() : 0L);
             return claims;
 
         } catch (Exception e) {

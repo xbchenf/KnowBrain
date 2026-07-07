@@ -58,6 +58,7 @@ bin\start.bat
 | http://localhost | 问答界面（员工使用） |
 | http://localhost/admin | 管理后台（管理员用） |
 | http://localhost:9001 | MinIO 控制台（文件存储管理） |
+| http://localhost:3000 | Grafana 监控看板（需启用 monitoring profile） |
 
 **默认管理员账户**：`admin` / `admin123`
 
@@ -68,14 +69,15 @@ bin\start.bat
 ```
                     ┌──────────────┐
                     │   Nginx:80   │  网关（反向代理）
-                    └──┬───┬───┬──┘
-                       │   │   │
-          ┌────────────┼───┼───┼────────────┐
-          │            │   │   │            │
-     ┌────▼────┐ ┌────▼───▼───▼────┐ ┌────▼────┐
-     │  Web UI │ │  Server :8080   │ │ Admin UI│
-     │  (Q&A)  │ │  Spring Boot   │ │ (管理)  │
-     └─────────┘ └──┬──┬──┬──┬───┘ └─────────┘
+                    └──┬───┬───────┘
+                       │   │
+          ┌────────────┼───┼────────────┐
+          │            │   │            │
+     ┌────▼────┐ ┌────▼───▼────┐ ┌────▼──────────┐
+     │ Web UI  │ │  Server :8080│ │ Prometheus    │
+     │(Q&A+管理)│ │  Spring Boot│ │ Grafana       │
+     │   :80   │ └──┬──┬──┬──┬──┘ │ (profile启用)│
+     └─────────┘    │  │  │  │    └───────────────┘
                     │  │  │  │
           ┌─────────┘  │  │  └─────────┐
           │            │  │            │
@@ -86,22 +88,23 @@ bin\start.bat
           │                          │
      ┌────▼────┐                     │
      │  Redis  │  文档存储 ←─────────┘
-     │  :6379  │  向量存储 ←─ Milvus 通过 MinIO 存储向量
+     │  :6379  │
      └─────────┘
 ```
 
-共 8 个容器：
+共 7 个容器（不含监控），9 个容器（含监控）：
 
 | 容器 | 技术栈 | 端口 |
 |------|--------|------|
 | knowbrain-nginx | Nginx Alpine | 80 |
 | knowbrain-server | Spring Boot 3.3 + Java 17 | 8080 |
 | knowbrain-web | Nginx + Vue 3 | (内部) |
-| knowbrain-admin | Nginx + Vue 3 | (内部) |
 | knowbrain-mysql | MySQL 8.0 | 3306 |
 | knowbrain-redis | Redis 7 | 6379 |
 | knowbrain-milvus | Milvus 2.4 | 19530 |
 | knowbrain-minio | MinIO | 9000 / 9001 |
+| knowbrain-prometheus | Prometheus | 9090（profile） |
+| knowbrain-grafana | Grafana | 3000（profile） |
 
 ---
 
@@ -139,7 +142,7 @@ docker compose up -d
 docker compose pull mysql redis minio milvus
 
 # 重新构建应用镜像
-docker compose build --no-cache server web admin
+docker compose build --no-cache server web
 
 # 重启
 docker compose up -d
@@ -204,6 +207,18 @@ docker compose up -d
 |------|--------|
 | `NGINX_PORT` | 80 |
 | `SERVER_PORT` | 8080 |
+| `PROMETHEUS_PORT` | 9090 |
+| `GRAFANA_PORT` | 3000 |
+
+### 监控（可选）
+
+```bash
+# 启用 Prometheus + Grafana 监控
+docker compose --profile monitoring up -d
+```
+
+- **Prometheus**：`http://localhost:9090` — 采集 JVM 指标（heap、GC、线程）+ RAG 性能指标
+- **Grafana**：`http://localhost:3000` — 内置 JVM 概览 + RAG 检索看板
 
 ---
 
@@ -224,8 +239,8 @@ docker save mysql:8.0 redis:7-alpine minio/minio:latest minio/mc:latest \
   milvusdb/milvus:v2.4.0 nginx:alpine -o knowbrain-images.tar
 
 # 构建应用镜像
-docker compose build server web admin
-docker save knowbrain-server:latest knowbrain-web:latest knowbrain-admin:latest \
+docker compose build server web
+docker save knowbrain-server:latest knowbrain-web:latest \
   -o knowbrain-app.tar
 
 # 复制到离线机器
@@ -288,6 +303,6 @@ tar -czf knowbrain-backup.tar.gz \
 
 ```bash
 git pull
-docker compose build --no-cache server web admin
+docker compose build --no-cache server web
 docker compose up -d
 ```

@@ -1,5 +1,6 @@
 package com.knowbrain.auth;
 
+import com.knowbrain.audit.Auditable;
 import com.knowbrain.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +29,9 @@ public class DepartmentController {
     }
 
     @Operation(summary = "创建部门")
+    @Auditable(operation = "CREATE", resourceType = "DEPARTMENT",
+               resourceId = "#result.data.id", resourceName = "#dept.name",
+               description = "创建部门")
     @PostMapping
     public Result<Department> create(@RequestBody Department dept) {
         if (dept.getName() == null || dept.getName().isBlank()) {
@@ -37,12 +41,16 @@ public class DepartmentController {
     }
 
     @Operation(summary = "更新部门")
+    @Auditable(operation = "UPDATE", resourceType = "DEPARTMENT",
+               resourceId = "#id", description = "更新部门")
     @PutMapping("/{id}")
     public Result<Department> update(@PathVariable Long id, @RequestBody Department dept) {
         return Result.ok("更新成功", departmentService.update(id, dept));
     }
 
     @Operation(summary = "删除部门")
+    @Auditable(operation = "DELETE", resourceType = "DEPARTMENT",
+               resourceId = "#id", description = "删除部门")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         departmentService.delete(id);

@@ -1,0 +1,164 @@
+{
+  "title": "KnowBrain RAG 指标",
+  "uid": "knowbrain-rag",
+  "timezone": "browser",
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "title": "问答 QPS",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "decimals": 1}
+      },
+      "targets": [{
+        "expr": "rate(rag_request_duration_seconds_count[1m])",
+        "legendFormat": "QPS"
+      }]
+    },
+    {
+      "id": 2,
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "title": "总请求数",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {"unit": "short"}
+      },
+      "targets": [{
+        "expr": "sum(rag_requests_total)",
+        "legendFormat": "Total"
+      }]
+    },
+    {
+      "id": 3,
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "title": "缓存命中率",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {"unit": "percent", "decimals": 1, "max": 100}
+      },
+      "targets": [{
+        "expr": "rate(rag_cache_hits_total[5m]) / rate(rag_request_duration_seconds_count[5m]) * 100",
+        "legendFormat": "命中率"
+      }]
+    },
+    {
+      "id": 4,
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "title": "FAQ 命中次数",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {"unit": "short"}
+      },
+      "targets": [{
+        "expr": "sum(rag_faq_hits_total)",
+        "legendFormat": "FAQ"
+      }]
+    },
+    {
+      "id": 10,
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "title": "问答耗时 (P50/P95/P99)",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"unit": "ms"}
+      },
+      "targets": [
+        {
+          "expr": "rag_request_duration_seconds{quantile=\"0.5\"} * 1000",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "rag_request_duration_seconds{quantile=\"0.95\"} * 1000",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "rag_request_duration_seconds{quantile=\"0.99\"} * 1000",
+          "legendFormat": "P99"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "title": "检索 vs LLM 耗时对比",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"unit": "ms"}
+      },
+      "targets": [
+        {
+          "expr": "rate(rag_search_duration_seconds_sum[5m]) / rate(rag_search_duration_seconds_count[5m]) * 1000",
+          "legendFormat": "检索耗时 (avg)"
+        },
+        {
+          "expr": "rate(rag_llm_duration_seconds_sum[5m]) / rate(rag_llm_duration_seconds_count[5m]) * 1000",
+          "legendFormat": "LLM 耗时 (avg)"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "gridPos": {"x": 0, "y": 12, "w": 8, "h": 7},
+      "title": "请求结果分布",
+      "type": "piechart",
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "expr": "sum(rag_requests_total) by (result)",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "gridPos": {"x": 8, "y": 12, "w": 8, "h": 7},
+      "title": "LLM 降级趋势",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "expr": "rate(rag_requests_total{result='fallback'}[5m])",
+          "legendFormat": "降级次数/秒"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "gridPos": {"x": 16, "y": 12, "w": 8, "h": 7},
+      "title": "文档上传量",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "expr": "rate(rag_documents_uploaded_total[5m])",
+          "legendFormat": "上传/秒"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "gridPos": {"x": 0, "y": 19, "w": 12, "h": 7},
+      "title": "登录失败次数",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "expr": "rate(http_login_failures_total[5m])",
+          "legendFormat": "失败/秒"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}

@@ -1,6 +1,8 @@
 package com.knowbrain.document.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.knowbrain.audit.Auditable;
+import com.knowbrain.common.RAGMetrics;
 import com.knowbrain.common.Result;
 import com.knowbrain.document.entity.EkDocument;
 import com.knowbrain.document.service.DocumentService;
@@ -23,11 +25,14 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final PermissionService permissionService;
+    private final RAGMetrics metrics;
 
     /**
      * 上传文档（需 EDITOR 以上权限）
      */
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Auditable(operation = "CREATE", resourceType = "DOCUMENT",
+               resourceId = "#result.data.id", description = "上传文档")
     public Result<EkDocument> upload(@RequestParam("file") MultipartFile file,
                                       @RequestParam("spaceId") Long spaceId,
                                       @RequestParam(value = "category", required = false) String category,
@@ -55,6 +60,7 @@ public class DocumentController {
         Long uploaderId = getUserId(request);
         permissionService.checkWriteAccess(spaceId, uploaderId);
         EkDocument doc = documentService.upload(file, spaceId, uploaderId, category);
+        metrics.recordDocumentUploaded();
         return Result.ok("上传成功", doc);
     }
 
@@ -88,6 +94,8 @@ public class DocumentController {
      * 更新文档元数据（标题、分类）
      */
     @PutMapping("/{id}")
+    @Auditable(operation = "UPDATE", resourceType = "DOCUMENT",
+               resourceId = "#id", description = "更新文档元数据")
     public Result<Void> updateMeta(@PathVariable Long id,
                                    @RequestBody Map<String, String> body,
                                    HttpServletRequest request) {
@@ -107,6 +115,8 @@ public class DocumentController {
      * 删除文档（需 EDITOR 以上权限）
      */
     @DeleteMapping("/{id}")
+    @Auditable(operation = "DELETE", resourceType = "DOCUMENT",
+               resourceId = "#id", description = "删除文档")
     public Result<Void> delete(@PathVariable Long id, HttpServletRequest request) {
         EkDocument doc = documentService.getById(id);
         if (doc == null) {

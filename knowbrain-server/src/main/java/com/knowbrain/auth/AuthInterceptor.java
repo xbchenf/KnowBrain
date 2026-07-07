@@ -19,6 +19,8 @@ import java.util.Map;
 public class AuthInterceptor implements HandlerInterceptor {
 
     private final JwtUtil jwtUtil;
+    private final TokenBlacklistService blacklistService;
+    private final UserService userService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
@@ -35,6 +37,14 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
 
         String token = authHeader.substring(7);
+
+        // 0. 黑名单检查（退出登录后 Token 立即失效）
+        String jti = jwtUtil.getJti(token);
+        if (blacklistService.isBlacklisted(jti)) {
+            writeJson(response, 401, "Token已失效，请重新登录");
+            return false;
+        }
+
         Map<String, Object> claims = jwtUtil.verifyToken(token);
         if (claims == null) {
             writeJson(response, 401, "Token无效或已过期");
@@ -45,6 +55,21 @@ public class AuthInterceptor implements HandlerInterceptor {
         request.setAttribute("userId", claims.get("userId"));
         request.setAttribute("username", claims.get("username"));
         request.setAttribute("role", claims.get("role"));
+
+        // 0.5 用户级 Token 失效检查（禁用 / 改密后所有旧 Token 立即失效）
+        Object uidObj = claims.get("userId");
+        if (uidObj != null) {
+            long userId = uidObj instanceof Number ? ((Number) uidObj).longValue() : 0;
+            long invalidBefore = userService.getTokenInvalidBefore(userId);
+            if (invalidBefore > 0) {
+                Object iatObj = claims.get("iat");
+                long iat = iatObj instanceof Number ? ((Number) iatObj).longValue() : 0;
+                if (iat > 0 && iat < invalidBefore) {
+                    writeJson(response, 401, "账号状态已变更，请重新登录");
+                    return false;
+                }
+            }
+        }
 
         // /api/v1/admin/** 权限控制：
         //   ADMIN   — 全部方法可访问

@@ -1,0 +1,116 @@
+{
+  "title": "KnowBrain JVM 监控",
+  "uid": "knowbrain-jvm",
+  "timezone": "browser",
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 7},
+      "title": "JVM 堆内存",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"unit": "bytes"}
+      },
+      "targets": [
+        {
+          "expr": "jvm_memory_used_bytes{area='heap'}",
+          "legendFormat": "堆已用"
+        },
+        {
+          "expr": "jvm_memory_committed_bytes{area='heap'}",
+          "legendFormat": "堆已提交"
+        },
+        {
+          "expr": "jvm_memory_max_bytes{area='heap'}",
+          "legendFormat": "堆最大值"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 7},
+      "title": "GC 暂停时间",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"unit": "ms"}
+      },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_pause_seconds_sum[5m]) / rate(jvm_gc_pause_seconds_count[5m]) * 1000",
+          "legendFormat": "{{action}} (avg)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 7},
+      "title": "GC 频率",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"unit": "ops"}
+      },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_pause_seconds_count[5m])",
+          "legendFormat": "{{action}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "gridPos": {"x": 0, "y": 7, "w": 8, "h": 7},
+      "title": "线程状态",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "expr": "jvm_threads_live_threads",
+          "legendFormat": "活跃线程"
+        },
+        {
+          "expr": "jvm_threads_daemon_threads",
+          "legendFormat": "守护线程"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "gridPos": {"x": 8, "y": 7, "w": 8, "h": 7},
+      "title": "CPU 使用率",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"unit": "percent", "max": 100}
+      },
+      "targets": [
+        {
+          "expr": "system_cpu_usage * 100",
+          "legendFormat": "系统 CPU"
+        },
+        {
+          "expr": "process_cpu_usage * 100",
+          "legendFormat": "进程 CPU"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "gridPos": {"x": 16, "y": 7, "w": 8, "h": 7},
+      "title": "HTTP 请求速率",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"}
+      },
+      "targets": [
+        {
+          "expr": "rate(http_server_requests_seconds_count[5m])",
+          "legendFormat": "{{method}} {{uri}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}

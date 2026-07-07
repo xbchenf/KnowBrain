@@ -2,7 +2,7 @@
   <div class="admin-layout">
     <!-- 亮色侧边栏 -->
     <aside class="admin-sidebar">
-      <div class="sidebar-logo">
+      <div class="sidebar-logo" @click="router.push('/')">
         <div class="logo-icon">
           <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
             <rect width="48" height="48" rx="12" fill="#409EFF"/>
@@ -13,36 +13,41 @@
       </div>
 
       <nav class="sidebar-nav">
-        <router-link to="/dashboard" class="nav-item" :class="{ active: route.path === '/dashboard' }">
+        <router-link to="/admin/dashboard" class="nav-item" :class="{ active: route.path === '/admin/dashboard' }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
           <span>工作台</span>
         </router-link>
 
         <div v-if="isAdmin" class="nav-group-label">系统管理</div>
 
-        <router-link v-if="isAdmin" to="/departments" class="nav-item" :class="{ active: route.path === '/departments' }">
+        <router-link v-if="isAdmin" to="/admin/departments" class="nav-item" :class="{ active: route.path === '/admin/departments' }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           <span>部门管理</span>
         </router-link>
 
-        <router-link v-if="isAdmin" to="/users" class="nav-item" :class="{ active: route.path === '/users' }">
+        <router-link v-if="isAdmin" to="/admin/users" class="nav-item" :class="{ active: route.path === '/admin/users' }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="6" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
           <span>用户管理</span>
         </router-link>
 
-        <router-link v-if="isAdmin" to="/scenarios" class="nav-item" :class="{ active: route.path === '/scenarios' }">
+        <router-link v-if="isAdmin" to="/admin/scenarios" class="nav-item" :class="{ active: route.path === '/admin/scenarios' }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span>场景配置</span>
         </router-link>
 
-        <router-link v-if="isAdmin" to="/stats" class="nav-item" :class="{ active: route.path === '/stats' }">
+        <router-link v-if="isAdmin" to="/admin/stats" class="nav-item" :class="{ active: route.path === '/admin/stats' }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           <span>使用统计</span>
         </router-link>
 
-        <router-link v-if="isAdmin" to="/feedback" class="nav-item" :class="{ active: route.path === '/feedback' }">
+        <router-link v-if="isAdmin" to="/admin/feedback" class="nav-item" :class="{ active: route.path === '/admin/feedback' }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
           <span>反馈统计</span>
+        </router-link>
+
+        <router-link v-if="isAdmin" to="/admin/audit-logs" class="nav-item" :class="{ active: route.path === '/admin/audit-logs' }">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>审计日志</span>
         </router-link>
       </nav>
 
@@ -87,12 +92,13 @@ const userInitial = ref('管')
 const isAdmin = ref(false)
 
 const pageTitles: Record<string, string> = {
-  '/dashboard': '工作台',
-  '/departments': '部门管理',
-  '/users': '用户管理',
-  '/scenarios': '场景配置',
-  '/stats': '使用统计',
-  '/feedback': '反馈统计'
+  '/admin/dashboard': '工作台',
+  '/admin/departments': '部门管理',
+  '/admin/users': '用户管理',
+  '/admin/scenarios': '场景配置',
+  '/admin/stats': '使用统计',
+  '/admin/feedback': '反馈统计',
+  '/admin/audit-logs': '审计日志'
 }
 const pageTitle = computed(() => pageTitles[route.path] || 'KnowBrain 管理后台')
 
@@ -103,7 +109,7 @@ onMounted(() => {
       const parsed = JSON.parse(u)
       userName.value = parsed.name || '管理员'
       userInitial.value = (parsed.name || '管').charAt(0)
-      isAdmin.value = parsed.role === 'ADMIN'
+      isAdmin.value = parsed.role === 'ADMIN' || parsed.role === 'MANAGER'
     } catch { /* ignore */ }
   }
 })
@@ -126,7 +132,7 @@ function logout() {
   top: 0; left: 0; bottom: 0; z-index: 100;
 }
 .sidebar-logo {
-  padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px;
+  padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer;
 }
 .logo-icon { display: flex; align-items: center; }
 .sidebar-logo h1 { font-size: 17px; color: #303133; font-weight: 700; letter-spacing: -.3px; }

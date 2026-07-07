@@ -8,7 +8,7 @@
     <!-- 文档区 -->
     <template v-else>
       <div class="doc-toolbar">
-        <h3>{{ props.spaceName || '文档列表' }}</h3>
+        <h3>{{ spaceName || '文档列表' }}</h3>
       </div>
 
       <el-table :data="documents" v-loading="docLoading" stripe>
@@ -58,10 +58,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { listDocuments, getDocument } from '../api'
 
-const props = defineProps<{ spaceId: number | null; spaceName: string }>()
+const route = useRoute()
+const spaceId = computed(() => {
+  const id = route.query.spaceId
+  return id ? Number(id) : null
+})
+const spaceName = computed(() => (route.query.spaceName as string) || '')
 
 const documents = ref<any[]>([])
 const docLoading = ref(false)
@@ -72,7 +78,7 @@ const previewVisible = ref(false)
 const previewDocTitle = ref('')
 const previewHtml = ref('')
 
-watch(() => props.spaceId, (id) => {
+watch(spaceId, (id) => {
   if (id) {
     pagination.page = 1
     loadDocuments()
@@ -80,10 +86,10 @@ watch(() => props.spaceId, (id) => {
 })
 
 async function loadDocuments() {
-  if (!props.spaceId) return
+  if (!spaceId.value) return
   docLoading.value = true
   try {
-    const { data } = await listDocuments(props.spaceId, pagination.page, pagination.size)
+    const { data } = await listDocuments(spaceId.value, pagination.page, pagination.size)
     if (data?.code === 200) {
       documents.value = data.data?.records || []
       totalDocs.value = data.data?.total || 0

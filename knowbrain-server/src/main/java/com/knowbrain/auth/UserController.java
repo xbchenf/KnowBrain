@@ -1,6 +1,7 @@
 package com.knowbrain.auth;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.knowbrain.audit.Auditable;
 import com.knowbrain.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,6 +36,9 @@ public class UserController {
     }
 
     @Operation(summary = "管理员创建用户")
+    @Auditable(operation = "CREATE", resourceType = "USER",
+               resourceId = "#result.data.id", resourceName = "#request['username']",
+               description = "管理员创建用户")
     @PostMapping
     public Result<SysUser> create(@RequestBody Map<String, Object> request) {
         String username = request.get("username") != null ? request.get("username").toString() : null;
@@ -54,12 +58,16 @@ public class UserController {
     }
 
     @Operation(summary = "更新用户信息")
+    @Auditable(operation = "UPDATE", resourceType = "USER",
+               resourceId = "#id", description = "管理员更新用户信息")
     @PutMapping("/{id}")
     public Result<SysUser> update(@PathVariable Long id, @RequestBody SysUser updates) {
         return Result.ok("更新成功", userService.updateUser(id, updates));
     }
 
     @Operation(summary = "重置用户密码")
+    @Auditable(operation = "UPDATE", resourceType = "USER",
+               resourceId = "#id", description = "管理员重置用户密码")
     @PutMapping("/{id}/reset-password")
     public Result<String> resetPassword(@PathVariable Long id, @RequestBody Map<String, String> request) {
         userService.resetPassword(id, request.get("password"));

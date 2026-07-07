@@ -74,7 +74,12 @@ async function submit() {
     }))
 
     ElMessage.success(mode.value === 'login' ? '登录成功' : '注册成功')
-    router.push('/dashboard')
+    // 按角色跳转：普通用户 → 问答页，管理员 → 管理后台
+    if (data.role === 'USER') {
+      router.push('/')
+    } else {
+      router.push('/admin/dashboard')
+    }
   } catch (e: any) {
     ElMessage.error(e.response?.data?.message || '操作失败')
   } finally {

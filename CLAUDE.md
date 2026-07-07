@@ -106,7 +106,7 @@ knowbrain-server/
 │       │   ├── categories.json
 │       │   ├── glossary.json
 │       │   └── faq.json
-│       └── hr-policy/       # HR 制度场景包（规划中）
+│       └── hr-policy/       # HR 制度场景包
 └── docker/
     └── mysql/init/          # 数据库初始化 SQL
 

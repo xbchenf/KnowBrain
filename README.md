@@ -104,7 +104,7 @@ KnowBrain 是一个**纯私有化部署**的企业智能知识库平台。上传
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-org/knowbrain.git
+git clone <repository-url> knowbrain
 cd knowbrain
 ```
 

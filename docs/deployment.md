@@ -19,7 +19,7 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-org/KnowBrain.git
+git clone <repository-url> KnowBrain
 cd KnowBrain
 ```
 

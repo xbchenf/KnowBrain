@@ -8,7 +8,7 @@ server:
 
 # CORS 跨域配置
 cors:
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost}
 
 spring:
   # 数据源 — MySQL
@@ -85,7 +85,7 @@ minio:
 
 # JWT 配置
 jwt:
-  secret: ${JWT_SECRET:knowbrain_jwt_secret_2024}
+  secret: ${JWT_SECRET:change-me-in-production}
   expire-hours: ${JWT_EXPIRE_HOURS:24}
 
 # 敏感词过滤

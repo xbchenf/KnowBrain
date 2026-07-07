@@ -3,7 +3,7 @@
     <div class="login-card">
       <div class="login-header">
         <h1>KnowBrain</h1>
-        <p>企业知识大脑</p>
+        <p>企业知识大脑 · 智能知识库</p>
       </div>
 
       <el-tabs v-model="mode" class="login-tabs">

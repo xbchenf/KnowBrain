@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 流水线：FAQ 匹配 → 术语改写 → 敏感词过滤 → 二次 FAQ 匹配
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("mock")
 @Import(TestMockConfig.class)
 @DisplayName("查询预处理器")
 class QueryPreprocessorTest {

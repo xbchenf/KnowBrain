@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 测试 2-3：FAQ 精确匹配 + 关键词匹配
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("mock")
 @Import(TestMockConfig.class)
 @DisplayName("FAQ 预设问答匹配")
 class FaqServiceTest {

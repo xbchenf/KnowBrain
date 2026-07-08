@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   USER    → 按空间可见性 (PUBLIC/TEAM/PRIVATE) 决定
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("mock")
 @Import(TestMockConfig.class)
 @DisplayName("空间权限管理")
 class PermissionServiceTest {

@@ -11,10 +11,12 @@ import com.knowbrain.document.mapper.EkDocumentMapper;
 import com.knowbrain.document.service.DocumentService;
 import com.knowbrain.document.service.PdfImageRenderer;
 import com.knowbrain.document.service.QwenVisionService;
+import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.document.service.SmartChunker;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.milvus.v2.client.MilvusClientV2;
+import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
 import com.knowbrain.retrieval.engine.RAGCacheService;
 import com.knowbrain.retrieval.engine.TextTokenizer;
@@ -22,6 +24,7 @@ import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -156,16 +159,53 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void delete(Long id) {
+        EkDocument doc = documentMapper.selectById(id);
+        if (doc == null) {
+            throw new BizException(404, "文档不存在");
+        }
+
+        // 1. 删除 Milvus 向量数据
+        try {
+            milvusClient.delete(DeleteReq.builder()
+                    .collectionName(collectionName)
+                    .filter("document_id == \"" + id + "\"")
+                    .build());
+            log.info("Milvus 向量已清理: docId={}", id);
+        } catch (Exception e) {
+            log.error("Milvus 向量删除失败: docId={}", id, e);
+            // 不阻塞数据库删除，记录错误继续
+        }
+
+        // 2. 删除 MinIO 对象
+        if (doc.getMinioPath() != null) {
+            try {
+                minioClient.removeObject(RemoveObjectArgs.builder()
+                        .bucket(bucket)
+                        .object(doc.getMinioPath())
+                        .build());
+                log.info("MinIO 对象已删除: bucket={}, key={}", bucket, doc.getMinioPath());
+            } catch (Exception e) {
+                log.error("MinIO 对象删除失败: key={}", doc.getMinioPath(), e);
+                // 不阻塞数据库删除
+            }
+        }
+
+        // 3. 删除文档切片（MySQL）
+        LambdaQueryWrapper<EkDocumentChunk> chunkWrapper = new LambdaQueryWrapper<>();
+        chunkWrapper.eq(EkDocumentChunk::getDocumentId, id);
+        chunkMapper.delete(chunkWrapper);
+
+        // 4. 删除文档记录（逻辑删除）
         documentMapper.deleteById(id);
         cacheService.invalidateAll();
-        log.info("文档已删除: id={}", id);
+        log.info("文档已完整删除: id={}, minio={}", id, doc.getMinioPath());
     }
 
     @Override
     public void updateMeta(Long id, String title, String category) {
         EkDocument doc = documentMapper.selectById(id);
         if (doc == null) {
-            throw new RuntimeException("文档不存在");
+            throw new BizException(404, "文档不存在");
         }
         if (title != null && !title.isBlank()) {
             doc.setTitle(title.trim());
@@ -252,7 +292,7 @@ public class DocumentServiceImpl implements DocumentService {
         List<byte[]> pageImages = renderer.renderPages(pdfBytes);
 
         if (pageImages.isEmpty()) {
-            throw new RuntimeException("PDF 渲染无页面");
+            throw new BizException(500, "PDF 渲染无页面");
         }
 
         log.info("扫描件 OCR 开始: {} 页", pageImages.size());
@@ -371,7 +411,7 @@ public class DocumentServiceImpl implements DocumentService {
                     .map(Document::getContent)
                     .reduce("", (a, b) -> a + "\n" + b);
         } catch (Exception e) {
-            throw new RuntimeException("Tika 解析失败", e);
+            throw new BizException(500, "Tika 解析失败: " + e.getMessage());
         } finally {
             if (tempFile != null) {
                 try { Files.deleteIfExists(tempFile); } catch (Exception ignored) {}
@@ -390,7 +430,7 @@ public class DocumentServiceImpl implements DocumentService {
                 log.info("MinIO Bucket '{}' 已创建", bucket);
             }
         } catch (Exception e) {
-            throw new RuntimeException("MinIO Bucket 初始化失败: " + bucket, e);
+            throw new BizException(500, "MinIO Bucket 初始化失败: " + bucket);
         }
     }
 
@@ -411,7 +451,7 @@ public class DocumentServiceImpl implements DocumentService {
             log.info("文件已上传 MinIO: bucket={}, key={}", bucket, objectKey);
             return objectKey;
         } catch (Exception e) {
-            throw new RuntimeException("MinIO 上传失败", e);
+            throw new BizException(500, "MinIO 上传失败: " + e.getMessage());
         }
     }
 

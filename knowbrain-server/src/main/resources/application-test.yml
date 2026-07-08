@@ -1,0 +1,24 @@
+# ============================================================
+# 系统测试环境部署配置
+# 激活方式: java -jar knowbrain-server.jar --spring.profiles.active=test
+# 注意：部署时需设置环境变量（MYSQL_HOST、REDIS_HOST 等指向测试环境服务）
+# ============================================================
+
+# 优雅停机（测试环境滚动更新时防止请求中断）
+server:
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# MyBatis-Plus 关闭 SQL 日志
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# 日志（测试环境精简）
+logging:
+  level:
+    com.knowbrain: INFO
+    org.springframework.ai: INFO

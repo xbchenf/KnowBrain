@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 测试 9：术语改写 — 口语 → 正式术语
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("mock")
 @Import(TestMockConfig.class)
 @DisplayName("术语词典改写")
 class GlossaryServiceTest {

@@ -1,6 +1,7 @@
 package com.knowbrain.retrieval.engine;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -125,7 +126,7 @@ public class RAGCacheService {
             byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("MD5 not available", e);
+            throw new BizException(500, "MD5 算法不可用");
         }
     }
 

@@ -467,7 +467,8 @@ function flatten(nodes: any[]): any[] {
   return r
 }
 
-function logout() {
+async function logout() {
+  try { await import('../api/index').then(m => m.logoutApi()) } catch { /* ignore */ }
   localStorage.removeItem('kb_token')
   localStorage.removeItem('kb_user')
   router.push('/login')

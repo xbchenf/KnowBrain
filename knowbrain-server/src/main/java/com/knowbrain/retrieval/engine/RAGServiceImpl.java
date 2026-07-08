@@ -1,9 +1,11 @@
 package com.knowbrain.retrieval.engine;
 
+import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.common.RAGMetrics;
 import com.knowbrain.common.RequestContext;
 import com.knowbrain.statistics.SearchLog;
 import com.knowbrain.statistics.SearchLogMapper;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +41,12 @@ public class RAGServiceImpl implements RAGService {
     @Value("classpath:prompts/rag-system.txt")
     private Resource promptTemplate;
 
+    @Value("${rag.confidence.high-threshold:0.8}")
+    private double confidenceHighThreshold;
+
+    @Value("${rag.confidence.low-threshold:0.6}")
+    private double confidenceLowThreshold;
+
     public RAGServiceImpl(HybridSearchService hybridSearchService,
                           ChatClient.Builder chatClientBuilder,
                           QueryPreprocessor preprocessor,
@@ -65,6 +73,8 @@ public class RAGServiceImpl implements RAGService {
         return chat(question, spaceIds, Collections.emptyList(), null);
     }
 
+    @CircuitBreaker(name = "llm-chat", fallbackMethod = "chatFallback")
+    @Retryable(retryFor = Exception.class, maxAttempts = 2, backoff = @Backoff(delay = 500))
     @Override
     public ChatResponse chat(String question, List<Long> spaceIds, List<Map<String, String>> history, String category) {
         long tStart = System.currentTimeMillis();
@@ -146,7 +156,7 @@ public class RAGServiceImpl implements RAGService {
                     .block(Duration.ofSeconds(120));
             llmSample.stop(metrics.llmTimer());
             if (answer == null || answer.isEmpty()) {
-                throw new RuntimeException("LLM 流式聚合结果为空（超时或 API 无响应）");
+                throw new BizException(502, "LLM 流式聚合结果为空（超时或 API 无响应）");
             }
         } catch (Exception e) {
             llmSample.stop(metrics.llmTimer());
@@ -323,6 +333,24 @@ public class RAGServiceImpl implements RAGService {
     // ==================== 辅助方法 ====================
 
     /**
+     * CircuitBreaker 降级方法：LLM 熔断时跳过生成，直接返回检索原文
+     */
+    @SuppressWarnings("unused")
+    private ChatResponse chatFallback(String question, List<Long> spaceIds,
+                                       List<Map<String, String>> history, String category,
+                                       Throwable t) {
+        log.warn("LLM CircuitBreaker 熔断降级: {}", t.getMessage());
+        List<SearchResult> sources = hybridSearchService.search(question, 5, spaceIds, category);
+        String fallback = buildFallbackAnswer(sources);
+        List<ChatResponse.SourceInfo> fallbackSources = sources.stream()
+                .map(s -> new ChatResponse.SourceInfo(
+                        s.getDocumentTitle(), s.getDocumentId(),
+                        s.getChunkIndex(), s.getContent()))
+                .toList();
+        return new ChatResponse(fallback, fallbackSources, true, "low");
+    }
+
+    /**
      * LLM 不可用时，拼接检索到的相关原文作为降级回答
      */
     private String buildFallbackAnswer(List<SearchResult> sources) {
@@ -458,8 +486,8 @@ public class RAGServiceImpl implements RAGService {
                 .max()
                 .orElse(0.0);
 
-        if (sources.size() >= 3 && maxScore > 0.8) return "high";
-        if (sources.size() >= 2 && maxScore > 0.6) return "medium";
+        if (sources.size() >= 3 && maxScore > confidenceHighThreshold) return "high";
+        if (sources.size() >= 2 && maxScore > confidenceLowThreshold) return "medium";
         return "low";
     }
 

@@ -41,6 +41,9 @@ export const login = (username: string, password: string) =>
 export const register = (username: string, password: string, name: string) =>
   api.post('/auth/register', { username, password, name })
 
+export const logoutApi = () =>
+  api.post('/auth/logout')
+
 // ================== 空间 ==================
 export const listSpaces = (page = 1, size = 20) =>
   api.get('/spaces', { params: { page, size } })

@@ -1,5 +1,6 @@
 # ============================================================
 # 冒烟测试配置 — H2 内存库 + 禁用外部依赖
+# 激活方式: mvn test（src/test/resources 自动覆盖 main/resources）
 # ============================================================
 
 spring:
@@ -11,6 +12,10 @@ spring:
     driver-class-name: org.h2.Driver
     hikari:
       maximum-pool-size: 5
+
+  # 禁用 Flyway（H2 不支持 MySQL 特定语法）
+  flyway:
+    enabled: false
 
   # H2 初始化脚本（建表）
   sql:

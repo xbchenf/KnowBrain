@@ -1,0 +1,23 @@
+# ============================================================
+# 生产环境配置
+# 激活方式: docker compose up -d（SPRING_PROFILES_ACTIVE=prod）
+# ============================================================
+
+# 优雅停机（确保 K8s/Docker 滚动更新时请求不中断）
+server:
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# MyBatis-Plus 关闭 SQL 日志（生产环境严禁输出 SQL）
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# 日志（生产环境精简）
+logging:
+  level:
+    com.knowbrain: INFO
+    org.springframework.ai: INFO

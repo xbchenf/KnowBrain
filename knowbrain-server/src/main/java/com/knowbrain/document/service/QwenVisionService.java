@@ -1,5 +1,6 @@
 package com.knowbrain.document.service;
 
+import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -98,7 +99,7 @@ public class QwenVisionService {
 
         Map<String, Object> response = responseEntity.getBody();
         if (response == null) {
-            throw new RuntimeException("API 返回空响应");
+            throw new BizException(502, "Qwen-VL API 返回空响应");
         }
 
         // DashScope 原生响应格式：
@@ -109,18 +110,18 @@ public class QwenVisionService {
             String errorMsg = Objects.toString(response.get("message"),
                     Objects.toString(response.get("code"), "unknown"));
             log.warn("Qwen-VL API 错误: {}", errorMsg);
-            throw new RuntimeException("Qwen-VL API 错误: " + errorMsg);
+            throw new BizException(502, "Qwen-VL API 错误: " + errorMsg);
         }
 
         List<Map<String, Object>> choices = (List<Map<String, Object>>) output.get("choices");
         if (choices == null || choices.isEmpty()) {
             log.warn("Qwen-VL 响应无 choices, output keys: {}", output.keySet());
-            throw new RuntimeException("API 返回无 choices");
+            throw new BizException(502, "Qwen-VL API 返回无 choices");
         }
 
         Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
         if (message == null) {
-            throw new RuntimeException("API 返回无 message");
+            throw new BizException(502, "Qwen-VL API 返回无 message");
         }
 
         // content 是数组：[{"text": "..."}]

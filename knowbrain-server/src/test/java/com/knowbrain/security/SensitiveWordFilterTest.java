@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 测试 10：敏感词过滤 — DFA 算法检测 + 脱敏
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("mock")
 @Import(TestMockConfig.class)
 @DisplayName("敏感词过滤")
 class SensitiveWordFilterTest {

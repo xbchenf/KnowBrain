@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
  * LLM 调用成功和降级的完整 mock 留待后续版本补充。
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("mock")
 @Import(TestMockConfig.class)
 @DisplayName("RAG 问答服务")
 class RAGServiceTest {

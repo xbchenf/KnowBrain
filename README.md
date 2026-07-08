@@ -87,6 +87,8 @@ KnowBrain 是一个**纯私有化部署**的企业智能知识库平台。上传
 | 缓存 | Redis 7 | 高频问答缓存、会话状态 |
 | 对象存储 | MinIO | 原始文档存储 |
 | 文档解析 | Apache Tika 2.x | PDF/Word/TXT/Markdown 多格式解析 |
+| 数据库迁移 | Flyway | 版本化 SQL，启动时自动执行增量升级 |
+| 熔断器 | Resilience4j | LLM/Milvus 故障隔离，防止级联失败 |
 | 前端 | Vue 3 + Element Plus | 问答界面 + 管理后台 |
 | 监控 | Prometheus + Grafana | JVM / RAG 指标（可选，profile 启用） |
 | 部署 | Docker Compose | 一键部署 |
@@ -164,7 +166,7 @@ knowbrain/
 │   ├── src/main/java/com/knowbrain/
 │   │   ├── auth/                # JWT 认证、权限拦截
 │   │   ├── audit/                # 审计日志（AOP 切面 + 异步入库）
-│   │   ├── common/              # 统一返回体、全局异常、健康检查、限流
+│   │   ├── common/              # 统一返回体、全局异常、健康检查、限流、请求追踪
 │   │   ├── config/              # 框架配置
 │   │   ├── document/            # 文档上传、解析、分块
 │   │   ├── feedback/            # 答案反馈（有用/无用）
@@ -177,13 +179,19 @@ knowbrain/
 │   │   ├── statistics/          # 使用统计
 │   │   └── websocket/           # WebSocket 流式输出
 │   ├── src/main/resources/
-│   │   ├── application.yml      # 应用配置
+│   │   ├── application.yml      # 公共配置（默认 dev profile）
+│   │   ├── application-dev.yml  # 本地开发：SQL 日志 + DEBUG
+│   │   ├── application-test.yml  # 测试部署：无 SQL 日志 + 优雅停机
+│   │   ├── application-prod.yml # 生产部署：无 SQL 日志 + 优雅停机
+│   │   ├── db/migration/        # Flyway 数据库增量迁移
 │   │   ├── prompts/             # LLM Prompt 模板
 │   │   └── scenarios/           # 场景种子数据
 │   │       ├── it-helpdesk/     # IT 运维场景包
 │   │       └── hr-policy/       # HR 制度场景包
+│   ├── src/test/resources/
+│   │   └── application-mock.yml # 构建期测试（H2 + Mock）
 │   └── docker/
-│       └── mysql/init/          # 数据库初始化 SQL
+│       └── mysql/init/          # 数据库初始化 SQL（首次部署）
 │
 ├── knowbrain-web/               # 统一前端（Vue 3 — Q&A 问答 + 管理后台）
 │   ├── src/
@@ -284,8 +292,12 @@ cd knowbrain-server
 # 启动依赖服务（MySQL、Redis、MinIO、Milvus）
 docker compose up -d mysql redis minio minio-init milvus
 
-# 启动开发服务器
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+# 启动开发服务器（默认 dev profile，SQL 日志 + DEBUG 输出）
+mvn spring-boot:run
+
+# 指定其他 profile
+mvn spring-boot:run -Dspring-boot.run.profiles=test   # 测试环境
+mvn spring-boot:run -Dspring-boot.run.profiles=prod   # 生产环境
 ```
 
 ### 前端开发

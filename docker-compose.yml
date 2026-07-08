@@ -158,6 +158,8 @@ services:
       JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
       # CORS
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost}
+      # MyBatis（生产环境关闭 SQL 日志）
+      MYBATIS_LOG_IMPL: org.apache.ibatis.logging.nologging.NoLoggingImpl
       # JVM
       JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC -Dfile.encoding=UTF-8"
       TZ: Asia/Shanghai

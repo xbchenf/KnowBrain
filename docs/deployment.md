@@ -207,10 +207,55 @@ docker compose up -d
 |------|--------|
 | `NGINX_PORT` | 80 |
 | `SERVER_PORT` | 8080 |
+| `MYSQL_PORT` | 3306 |
+| `REDIS_PORT` | 6379 |
+| `MINIO_API_PORT` | 9000 |
+| `MINIO_CONSOLE_PORT` | 9001 |
+| `MILVUS_GRPC_PORT` | 19530 |
+| `MILVUS_METRIC_PORT` | 9091 |
 | `PROMETHEUS_PORT` | 9090 |
 | `GRAFANA_PORT` | 3000 |
 
-### 监控（可选）
+### Spring Profile（多环境配置）
+
+项目内置四套 Profile 配置，通过 `SPRING_PROFILES_ACTIVE` 切换：
+
+| Profile | 配置文件 | 场景 | SQL 日志 | 日志级别 |
+|---------|---------|------|---------|---------|
+| `dev` | `application-dev.yml` | 本地开发（默认） | 输出 | DEBUG |
+| `test` | `application-test.yml` | 系统测试部署 | 关闭 | INFO |
+| `prod` | `application-prod.yml` | 生产部署 | 关闭 | INFO |
+| `mock` | `application-mock.yml` | 构建期单元测试（H2 内存库） | 关闭 | WARN |
+
+Docker Compose 默认激活 `prod`，无需手动设置。如需在测试环境部署：
+
+```bash
+# .env 中设置
+SPRING_PROFILES_ACTIVE=test
+MYBATIS_LOG_IMPL=org.apache.ibatis.logging.nologging.NoLoggingImpl
+```
+
+### 数据库迁移（Flyway）
+
+采用 **Docker init + Flyway** 双保险：
+
+| 阶段 | 机制 | 说明 |
+|------|------|------|
+| 首次部署 | Docker init (`docker/mysql/init/`) | MySQL 容器首次启动时建表 |
+| 后续升级 | Flyway (`db/migration/`) | 应用启动时自动执行新版本 SQL |
+
+升级流程：`git pull` → `docker compose build server` → `docker compose up -d server`，Flyway 自动执行变更。
+
+### 其他配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `SPRING_PROFILES_ACTIVE` | prod（Docker） | 激活的 Spring Profile |
+| `MILVUS_COLLECTION` | knowbrain_knowledge_base | 向量集合名称 |
+| `RAG_CONFIDENCE_HIGH` | 0.8 | 高置信度阈值 |
+| `RAG_CONFIDENCE_LOW` | 0.6 | 低置信度阈值 |
+
+### 安全
 
 ```bash
 # 启用 Prometheus + Grafana 监控

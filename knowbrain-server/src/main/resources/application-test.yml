@@ -12,11 +12,6 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
-# MyBatis-Plus 关闭 SQL 日志
-mybatis-plus:
-  configuration:
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
-
 # 日志（测试环境精简）
 logging:
   level:

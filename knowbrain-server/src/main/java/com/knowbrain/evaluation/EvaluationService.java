@@ -1,6 +1,7 @@
 package com.knowbrain.evaluation;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -138,9 +139,14 @@ public class EvaluationService {
 
     @Transactional
     public void updateDataset(Long id, EvaluationDataset dataset) {
-        dataset.setId(id);
-        dataset.setUpdateTime(java.time.LocalDateTime.now());
-        datasetMapper.updateById(dataset);
+        // 使用 LambdaUpdateWrapper 精确控制可更新字段，防止 Mass Assignment
+        LambdaUpdateWrapper<EvaluationDataset> uw = new LambdaUpdateWrapper<>();
+        uw.eq(EvaluationDataset::getId, id)
+          .set(EvaluationDataset::getName, dataset.getName())
+          .set(EvaluationDataset::getDescription, dataset.getDescription())
+          .set(EvaluationDataset::getScenario, dataset.getScenario())
+          .set(EvaluationDataset::getUpdateTime, LocalDateTime.now());
+        datasetMapper.update(null, uw);
     }
 
     // ==================== 问题管理 ====================
@@ -161,8 +167,13 @@ public class EvaluationService {
 
     @Transactional
     public void updateQuestion(Long id, EvaluationQuestion question) {
-        question.setId(id);
-        questionMapper.updateById(question);
+        // 使用 LambdaUpdateWrapper 精确控制可更新字段，防止 Mass Assignment
+        LambdaUpdateWrapper<EvaluationQuestion> uw = new LambdaUpdateWrapper<>();
+        uw.eq(EvaluationQuestion::getId, id)
+          .set(EvaluationQuestion::getQuestion, question.getQuestion())
+          .set(EvaluationQuestion::getExpectedAnswer, question.getExpectedAnswer())
+          .set(EvaluationQuestion::getExpectedDocIds, question.getExpectedDocIds());
+        questionMapper.update(null, uw);
     }
 
     @Transactional

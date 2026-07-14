@@ -136,6 +136,13 @@ public class EvaluationService {
         datasetMapper.deleteById(id);
     }
 
+    @Transactional
+    public void updateDataset(Long id, EvaluationDataset dataset) {
+        dataset.setId(id);
+        dataset.setUpdateTime(java.time.LocalDateTime.now());
+        datasetMapper.updateById(dataset);
+    }
+
     // ==================== 问题管理 ====================
 
     public IPage<EvaluationQuestion> listQuestions(Long datasetId, int page, int size) {
@@ -211,6 +218,15 @@ public class EvaluationService {
 
     public EvaluationRun getRun(Long id) {
         return runMapper.selectById(id);
+    }
+
+    @Transactional
+    public void deleteRun(Long id) {
+        // 级联删除关联结果
+        LambdaQueryWrapper<EvaluationResult> qwRes = new LambdaQueryWrapper<>();
+        qwRes.eq(EvaluationResult::getRunId, id);
+        resultMapper.delete(qwRes);
+        runMapper.deleteById(id);
     }
 
     public IPage<EvaluationResult> getRunResults(Long runId, int page, int size) {

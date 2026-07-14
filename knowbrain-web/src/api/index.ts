@@ -209,6 +209,9 @@ export const createEvaluationDataset = (data: Record<string, any>) =>
 export const deleteEvaluationDataset = (id: number) =>
   api.delete(`/admin/evaluation/datasets/${id}`)
 
+export const updateEvaluationDataset = (id: number, data: Record<string, any>) =>
+  api.put(`/admin/evaluation/datasets/${id}`, data)
+
 export const listEvaluationQuestions = (datasetId: number, params: Record<string, any>) =>
   api.get(`/admin/evaluation/datasets/${datasetId}/questions`, { params })
 
@@ -235,6 +238,9 @@ export const getEvaluationRun = (id: number) =>
 
 export const getEvaluationRunResults = (runId: number, params: Record<string, any>) =>
   api.get(`/admin/evaluation/runs/${runId}/results`, { params })
+
+export const deleteEvaluationRun = (id: number) =>
+  api.delete(`/admin/evaluation/runs/${id}`)
 
 // ================== 公开 FAQ ==================
 export function listPublicFaq() {

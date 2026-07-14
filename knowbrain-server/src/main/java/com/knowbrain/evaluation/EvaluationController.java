@@ -51,6 +51,14 @@ public class EvaluationController {
         return Result.ok(null);
     }
 
+    @Operation(summary = "更新数据集")
+    @PutMapping("/datasets/{id}")
+    public Result<Void> updateDataset(@PathVariable Long id,
+                                       @RequestBody EvaluationDataset dataset) {
+        evaluationService.updateDataset(id, dataset);
+        return Result.ok(null);
+    }
+
     // ==================== 问题管理 ====================
 
     @Operation(summary = "数据集问题列表")
@@ -134,6 +142,13 @@ public class EvaluationController {
     @GetMapping("/runs/{id}")
     public Result<EvaluationRun> getRun(@PathVariable Long id) {
         return Result.ok(evaluationService.getRun(id));
+    }
+
+    @Operation(summary = "删除运行记录（级联删除结果）")
+    @DeleteMapping("/runs/{id}")
+    public Result<Void> deleteRun(@PathVariable Long id) {
+        evaluationService.deleteRun(id);
+        return Result.ok(null);
     }
 
     @Operation(summary = "单题结果列表")

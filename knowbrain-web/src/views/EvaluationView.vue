@@ -10,9 +10,7 @@
       <div class="toolbar">
         <div class="toolbar-left">
           <el-select v-model="scenarioFilter" placeholder="全部场景" clearable style="width:140px" @change="loadDatasets">
-            <el-option label="IT 运维" value="it-helpdesk" />
-            <el-option label="HR 制度" value="hr-policy" />
-            <el-option label="通用" value="general" />
+            <el-option v-for="s in scenarioOptions" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </div>
         <div class="toolbar-right">
@@ -32,12 +30,17 @@
         <el-table-column prop="createTime" label="创建时间" width="170">
           <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openQuestionsDialog(row)">问题</el-button>
+            <el-button link type="success" size="small" @click="runFromDataset(row)">运行评测</el-button>
+            <el-button link type="warning" size="small" @click="openDatasetDialog(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="confirmDeleteDataset(row)">删除</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无数据集，点击「新建数据集」创建第一个" />
+        </template>
       </el-table>
 
       <el-pagination
@@ -89,11 +92,15 @@
         <el-table-column prop="createTime" label="创建时间" width="170">
           <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="viewRunResults(row)">查看结果</el-button>
+            <el-button link type="danger" size="small" @click="confirmDeleteRun(row)">删除</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无评测运行，选择数据集后点击「开始评测」" />
+        </template>
       </el-table>
 
       <el-pagination
@@ -108,16 +115,14 @@
     </template>
 
     <!-- ========== 对话框：新建/编辑数据集 ========== -->
-    <el-dialog v-model="datasetDialogVisible" :title="'新建数据集'" width="440px" :close-on-click-modal="false" @closed="resetDatasetForm">
+    <el-dialog v-model="datasetDialogVisible" :title="editingDataset ? '编辑数据集' : '新建数据集'" width="440px" :close-on-click-modal="false" @closed="resetDatasetForm">
       <el-form :model="datasetForm" label-position="top">
         <el-form-item label="名称" required>
           <el-input v-model="datasetForm.name" placeholder="如：IT 运维基准测试" />
         </el-form-item>
         <el-form-item label="场景">
           <el-select v-model="datasetForm.scenario" style="width:100%">
-            <el-option label="IT 运维" value="it-helpdesk" />
-            <el-option label="HR 制度" value="hr-policy" />
-            <el-option label="通用" value="general" />
+            <el-option v-for="s in scenarioOptions" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="描述">
@@ -154,6 +159,9 @@
             <el-button link type="danger" size="small" @click="confirmDeleteQuestion(row)">删除</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无问题，点击「添加问题」或「批量导入」" />
+        </template>
       </el-table>
       <el-pagination
         v-model:current-page="qPage" :page-size="qSize" :total="qTotal"
@@ -240,10 +248,10 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, VideoPlay } from '@element-plus/icons-vue'
 import {
-  listEvaluationDatasets, createEvaluationDataset, deleteEvaluationDataset,
+  listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, deleteEvaluationDataset,
   listEvaluationQuestions, addEvaluationQuestion, batchImportQuestions,
   updateEvaluationQuestion, deleteEvaluationQuestion,
-  startEvaluationRun, listEvaluationRuns, getEvaluationRun, getEvaluationRunResults
+  startEvaluationRun, listEvaluationRuns, getEvaluationRun, getEvaluationRunResults, deleteEvaluationRun
 } from '../api'
 
 // ===== Tab 状态 =====
@@ -261,8 +269,14 @@ const dsPage = ref(1); const dsSize = ref(20); const dsTotal = ref(0)
 const scenarioFilter = ref('')
 
 const datasetDialogVisible = ref(false)
+const editingDataset = ref<any>(null)
 const savingDataset = ref(false)
 const datasetForm = reactive({ name: '', scenario: 'general', description: '' })
+const scenarioOptions = ref<{ label: string; value: string }[]>([
+  { label: 'IT 运维', value: 'it-helpdesk' },
+  { label: 'HR 制度', value: 'hr-policy' },
+  { label: '通用', value: 'general' },
+])
 
 async function loadDatasets() {
   datasetLoading.value = true
@@ -277,10 +291,17 @@ async function loadDatasets() {
   } finally { datasetLoading.value = false }
 }
 
-function openDatasetDialog() {
-  datasetForm.name = ''
-  datasetForm.scenario = 'general'
-  datasetForm.description = ''
+function openDatasetDialog(row?: any) {
+  editingDataset.value = row || null
+  if (row) {
+    datasetForm.name = row.name
+    datasetForm.scenario = row.scenario || 'general'
+    datasetForm.description = row.description || ''
+  } else {
+    datasetForm.name = ''
+    datasetForm.scenario = 'general'
+    datasetForm.description = ''
+  }
   datasetDialogVisible.value = true
 }
 
@@ -288,18 +309,25 @@ function resetDatasetForm() {
   datasetForm.name = ''
   datasetForm.scenario = 'general'
   datasetForm.description = ''
+  editingDataset.value = null
 }
 
 async function saveDataset() {
   if (!datasetForm.name.trim()) { ElMessage.warning('请输入数据集名称'); return }
   savingDataset.value = true
   try {
-    await createEvaluationDataset({ ...datasetForm })
-    ElMessage.success('创建成功')
+    if (editingDataset.value) {
+      await updateEvaluationDataset(editingDataset.value.id, { ...datasetForm })
+      ElMessage.success('更新成功')
+    } else {
+      await createEvaluationDataset({ ...datasetForm })
+      ElMessage.success('创建成功')
+    }
     datasetDialogVisible.value = false
     await loadDatasets()
+    await loadDatasetOptions()
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '创建失败')
+    ElMessage.error(err?.response?.data?.message || '操作失败')
   } finally { savingDataset.value = false }
 }
 
@@ -428,17 +456,17 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const hasRunningTask = computed(() => runs.value.some((r: any) => r.status === 'RUNNING'))
 
-async function loadRuns() {
-  runLoading.value = true
+async function loadRuns(silent = false) {
+  if (!silent) runLoading.value = true
   try {
     const res = await listEvaluationRuns({ page: runPage.value, size: runSize.value })
     const data = res.data.data
     runs.value = data?.records || []
     runTotal.value = data?.total || 0
-    // 有运行中任务时，5 秒后自动刷新
+    // 有运行中任务时，5 秒后自动刷新（静默模式，保留当前页码）
     if (refreshTimer) clearInterval(refreshTimer)
     if (hasRunningTask.value) {
-      refreshTimer = setInterval(() => { loadRuns() }, 5000)
+      refreshTimer = setInterval(() => { loadRuns(true) }, 5000)
     }
   } finally { runLoading.value = false }
 }
@@ -465,6 +493,28 @@ async function startRun() {
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.message || '启动失败')
   } finally { startingRun.value = false }
+}
+
+// 从数据集 Tab 直接启动评测
+async function runFromDataset(row: any) {
+  try {
+    await startEvaluationRun(row.id)
+    ElMessage.success(`「${row.name}」评测已启动`)
+    activeTab.value = 'runs'
+    runPage.value = 1
+    await loadRuns()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '启动失败')
+  }
+}
+
+async function confirmDeleteRun(row: any) {
+  try {
+    await ElMessageBox.confirm(`确定删除此运行记录？关联的评测结果将一并删除。`, '确认删除', { type: 'warning' })
+  } catch { return }
+  await deleteEvaluationRun(row.id)
+  ElMessage.success('已删除')
+  await loadRuns()
 }
 
 // ===== 结果详情 =====

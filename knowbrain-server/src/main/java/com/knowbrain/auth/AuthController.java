@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -29,6 +30,7 @@ public class AuthController {
     private final LoginRateLimiter rateLimiter;
     private final TokenBlacklistService blacklistService;
     private final RAGMetrics metrics;
+    private final StringRedisTemplate stringRedisTemplate;
 
     @Operation(summary = "登录", description = "用户名密码登录，返回 JWT Token")
     @PostMapping("/login")
@@ -62,10 +64,12 @@ public class AuthController {
 
         rateLimiter.clearFailure(ip);
         String token = jwtUtil.createToken(user.getId(), user.getUsername(), user.getRole());
+        String refreshToken = jwtUtil.createRefreshToken(user.getId(), user.getUsername(), user.getRole());
         log.info("登录成功: username={}, role={}", username, user.getRole());
 
         return Result.ok(Map.of(
                 "token", token,
+                "refreshToken", refreshToken,
                 "userId", user.getId(),
                 "name", user.getName(),
                 "role", user.getRole()
@@ -109,36 +113,119 @@ public class AuthController {
         user.setPasswordHash(BCrypt.hashpw(password, BCrypt.gensalt()));
         user.setName(name);
         user.setPhone(phone);
-        user.setRole("USER");
+        user.setRole(RoleEnum.USER.getCode());
         user.setDepartmentId(departmentId);
         user.setStatus("ACTIVE");
         userMapper.insert(user);
 
-        String token = jwtUtil.createToken(user.getId(), user.getUsername(), "USER");
+        String token = jwtUtil.createToken(user.getId(), user.getUsername(), RoleEnum.USER.getCode());
+        String refreshToken = jwtUtil.createRefreshToken(user.getId(), user.getUsername(), RoleEnum.USER.getCode());
         log.info("新用户注册: username={}, id={}", username, user.getId());
 
         return Result.ok(Map.of(
                 "token", token,
+                "refreshToken", refreshToken,
                 "userId", user.getId(),
                 "name", user.getName(),
-                "role", "USER"
+                "role", RoleEnum.USER.getCode()
         ));
     }
 
-    @Operation(summary = "退出登录", description = "将当前 Token 加入黑名单，立即失效")
+    @Operation(summary = "退出登录", description = "将当前 Access Token 和 Refresh Token 加入黑名单")
     @Auditable(operation = "OTHER", resourceType = "AUTH", description = "用户退出登录")
     @PostMapping("/logout")
-    public Result<Void> logout(HttpServletRequest servletRequest) {
+    public Result<Void> logout(HttpServletRequest servletRequest, @RequestBody(required = false) Map<String, Object> body) {
         String authHeader = servletRequest.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
-            String jti = jwtUtil.getJti(token);
-            long exp = jwtUtil.getExp(token);
-            if (jti != null && exp > 0) {
-                blacklistService.add(jti, exp);
-            }
+            blacklistToken(token);
+        }
+        // 如果请求体中有 refreshToken，一并加入黑名单
+        if (body != null && body.containsKey("refreshToken")) {
+            blacklistToken(body.get("refreshToken").toString());
         }
         return Result.ok("已退出登录", null);
+    }
+
+    @Operation(summary = "刷新 Token", description = "使用 Refresh Token 换取新的 Access Token")
+    @PostMapping("/refresh")
+    public Result<Map<String, Object>> refresh(@RequestBody Map<String, Object> body) {
+        String refreshToken = body.get("refreshToken") != null ? body.get("refreshToken").toString() : null;
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Result.badRequest("refreshToken 不能为空");
+        }
+
+        // 1. 黑名单检查
+        String jti = jwtUtil.getJti(refreshToken);
+        if (jti != null && blacklistService.isBlacklisted(jti)) {
+            return Result.fail(401, "Refresh Token 已失效（已退出登录）");
+        }
+
+        // 2. 验证签名 + token type（防止 access token 冒充 refresh token）
+        Map<String, Object> claims = jwtUtil.verifySignature(refreshToken);
+        if (claims == null) {
+            return Result.fail(401, "Refresh Token 无效");
+        }
+
+        // 2b. Token 类型校验：只接受 refresh 类型的 token
+        if (!"refresh".equals(claims.get("type"))) {
+            return Result.fail(401, "仅支持 Refresh Token 刷新，请使用登录接口返回的 refreshToken");
+        }
+
+        // 3. 检查过期
+        long exp = claims.get("exp") instanceof Number ? ((Number) claims.get("exp")).longValue() : 0;
+        if (exp > 0 && exp < System.currentTimeMillis() / 1000) {
+            return Result.fail(401, "Refresh Token 已过期，请重新登录");
+        }
+
+        // 4. 用户状态验证
+        Long userId = claims.get("userId") instanceof Number ? ((Number) claims.get("userId")).longValue() : null;
+        if (userId == null) {
+            return Result.fail(401, "Token 格式错误");
+        }
+        SysUser user = userMapper.selectById(userId);
+        if (user == null || !"ACTIVE".equals(user.getStatus())) {
+            return Result.fail(401, "账户已被禁用");
+        }
+
+        // 5. 用户级 Token 失效检查
+        String invalidBeforeKey = "kb:token:invalid_before:" + userId;
+        String invalidBeforeStr = stringRedisTemplate.opsForValue().get(invalidBeforeKey);
+        if (invalidBeforeStr != null) {
+            long invalidBefore = Long.parseLong(invalidBeforeStr);
+            long iat = claims.get("iat") instanceof Number ? ((Number) claims.get("iat")).longValue() : 0;
+            if (iat < invalidBefore) {
+                return Result.fail(401, "Token 已失效，请重新登录（密码已变更）");
+            }
+        }
+
+        // 6. 颁发新 Token + 旧 Refresh Token 轮换（Rotation：用过的 refresh token 立即作废）
+        String newToken = jwtUtil.createToken(userId, user.getUsername(), user.getRole());
+        String newRefreshToken = jwtUtil.createRefreshToken(userId, user.getUsername(), user.getRole());
+
+        // Rotation: 将旧 refresh token 加入黑名单，防止重放攻击
+        long oldExp = claims.get("exp") instanceof Number ? ((Number) claims.get("exp")).longValue() : 0;
+        if (jti != null && oldExp > 0) {
+            blacklistService.add(jti, oldExp);
+        }
+        log.info("Token 刷新成功: userId={}", userId);
+
+        return Result.ok(Map.of(
+                "token", newToken,
+                "refreshToken", newRefreshToken,
+                "userId", userId,
+                "name", user.getName(),
+                "role", user.getRole()
+        ));
+    }
+
+    /** 将单个 token 加入黑名单 */
+    private void blacklistToken(String token) {
+        String jti = jwtUtil.getJti(token);
+        long exp = jwtUtil.getExp(token);
+        if (jti != null && exp > 0) {
+            blacklistService.add(jti, exp);
+        }
     }
 
     private String getClientIp(HttpServletRequest request) {

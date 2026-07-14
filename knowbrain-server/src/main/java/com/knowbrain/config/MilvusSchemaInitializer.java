@@ -133,6 +133,12 @@ public class MilvusSchemaInitializer {
                 .maxLength(16)
                 .build());
 
+        // 空间 ID — 用于检索时前置权限过滤，避免逐条回查 MySQL
+        schema.addField(AddFieldReq.builder()
+                .fieldName("space_id")
+                .dataType(DataType.Int64)
+                .build());
+
         // 2. 添加 BM25 Function（content → sparse_vector）
         schema.addFunction(Function.builder()
                 .name("bm25_func")

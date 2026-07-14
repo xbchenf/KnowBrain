@@ -98,6 +98,7 @@ minio:
 jwt:
   secret: ${JWT_SECRET:change-me-in-production}
   expire-hours: ${JWT_EXPIRE_HOURS:24}
+  refresh-expire-hours: ${JWT_REFRESH_EXPIRE_HOURS:168}
 
 # 敏感词过滤
 security:
@@ -116,9 +117,17 @@ mybatis-plus:
       logic-not-delete-value: 0
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.stdout.StdOutImpl}
 
 # 场景配置（种子数据由 ScenarioDataInitializer 加载 it-helpdesk + hr-policy）
+
+# RAG 评测配置
+evaluation:
+  judge:
+    # 评测专用 LLM 配置（OpenAI 兼容协议）
+    # 不配置时自动复用主 ChatClient（与 RAG 生成使用同一模型）
+    base-url: ${EVAL_JUDGE_BASE_URL:}
+    api-key: ${EVAL_JUDGE_API_KEY:}
+    model: ${EVAL_JUDGE_MODEL:}
 
 # RAG 问答配置
 rag:
@@ -152,6 +161,27 @@ rate-limit:
     enabled: ${RATE_LIMIT_RAG_ENABLED:true}
     max-per-minute: ${RATE_LIMIT_RAG_MAX_PER_MINUTE:20}
 
+# 企业 IM Bot 集成（企微/钉钉/飞书）
+# 未配置的平台不会自动启用，不影响主服务启动
+im:
+  enabled: ${IM_ENABLED:false}
+  wecom:
+    enabled: ${WECOM_ENABLED:false}
+    corp-id: ${WECOM_CORP_ID:}
+    agent-id: ${WECOM_AGENT_ID:}
+    secret: ${WECOM_SECRET:}
+    callback-token: ${WECOM_TOKEN:}
+    encoding-aes-key: ${WECOM_ENCODING_AES_KEY:}
+  dingtalk:
+    enabled: ${DINGTALK_ENABLED:false}
+    app-key: ${DINGTALK_APP_KEY:}
+    app-secret: ${DINGTALK_APP_SECRET:}
+    robot-code: ${DINGTALK_ROBOT_CODE:}
+  feishu:
+    enabled: ${FEISHU_ENABLED:false}
+    app-id: ${FEISHU_APP_ID:}
+    app-secret: ${FEISHU_APP_SECRET:}
+
 # Actuator + Prometheus 指标暴露
 management:
   endpoints:
@@ -166,5 +196,5 @@ management:
 # 日志
 logging:
   level:
-    com.knowbrain: DEBUG
-    org.springframework.ai: DEBUG
+    com.knowbrain: INFO
+    org.springframework.ai: INFO

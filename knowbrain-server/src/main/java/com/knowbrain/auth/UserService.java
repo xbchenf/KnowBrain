@@ -76,7 +76,7 @@ public class UserService {
         user.setPasswordHash(BCrypt.hashpw(password, BCrypt.gensalt()));
         user.setName(name != null ? name : username);
         user.setPhone(phone != null ? phone : "");
-        user.setRole(role != null ? role : "USER");
+        user.setRole(role != null ? role : RoleEnum.USER.getCode());
         user.setDepartmentId(departmentId);
         user.setStatus("ACTIVE");
         userMapper.insert(user);

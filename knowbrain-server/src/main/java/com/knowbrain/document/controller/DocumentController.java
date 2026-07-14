@@ -49,12 +49,12 @@ public class DocumentController {
         }
 
         // 文件类型校验
-        Set<String> allowedTypes = Set.of("pdf", "docx", "doc", "txt", "md");
+        Set<String> allowedTypes = Set.of("pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "txt", "md", "csv");
         String fileName = file.getOriginalFilename();
         String ext = fileName != null && fileName.contains(".")
                 ? fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase() : "";
         if (!allowedTypes.contains(ext)) {
-            return Result.badRequest("不支持的文件类型（." + ext + "），仅允许：pdf, docx, doc, txt, md");
+            return Result.badRequest("不支持的文件类型（." + ext + "），仅允许：pdf, docx, doc, xlsx, xls, pptx, ppt, txt, md, csv");
         }
 
         Long uploaderId = getUserId(request);

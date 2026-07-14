@@ -9,10 +9,10 @@ import com.knowbrain.document.entity.EkDocumentChunk;
 import com.knowbrain.document.mapper.EkDocumentChunkMapper;
 import com.knowbrain.document.mapper.EkDocumentMapper;
 import com.knowbrain.document.service.DocumentService;
-import com.knowbrain.document.service.PdfImageRenderer;
-import com.knowbrain.document.service.QwenVisionService;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
-import com.knowbrain.document.service.SmartChunker;
+import com.knowbrain.document.service.chunker.ElementAwareChunker;
+import com.knowbrain.document.service.parser.ParsedDocument;
+import com.knowbrain.document.service.parser.ParserRouter;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.milvus.v2.client.MilvusClientV2;
@@ -26,17 +26,12 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -46,8 +41,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 文档管理服务 — 上传 → Tika 解析 → SmartChunker 切片 → Milvus 向量化
- * 从 EICS V2.0 迁移适配
+ * 文档管理服务 — 上传 → ParserRouter（自动选择解析器）→ ElementAwareChunker 切片 → Milvus 向量化
+ *
+ * <p>解析器路由：PDF → Qwen-VL(100) / docx/xlsx/pptx → POI(90) / txt/md → Tika(10)
+ * <p>分块策略：Markdown 结构保护（表格/代码块原子化）→ SmartChunker 段落级切分
+ * <p>从 EICS V2.0 迁移适配，基于策略模式重构
  */
 @Slf4j
 @Service
@@ -56,12 +54,12 @@ public class DocumentServiceImpl implements DocumentService {
     private final EkDocumentMapper documentMapper;
     private final EkDocumentChunkMapper chunkMapper;
     private final MinioClient minioClient;
-    private final SmartChunker chunker;
     private final MilvusClientV2 milvusClient;
     private final EmbeddingModel embeddingModel;
     private final RAGCacheService cacheService;
     private final SysUserMapper userMapper;
-    private final QwenVisionService visionService;
+    private final ParserRouter parserRouter;
+    private final ElementAwareChunker elementAwareChunker;
 
     @Value("${minio.bucket}")
     private String bucket;
@@ -72,27 +70,24 @@ public class DocumentServiceImpl implements DocumentService {
     @Value("${spring.ai.vectorstore.milvus.embedding-dimension}")
     private int dimension;
 
-    @Value("${qwen-vl.ocr-min-chars:100}")
-    private int ocrMinChars;
-
     public DocumentServiceImpl(EkDocumentMapper documentMapper,
                                EkDocumentChunkMapper chunkMapper,
                                MinioClient minioClient,
-                               SmartChunker chunker,
                                MilvusClientV2 milvusClient,
                                EmbeddingModel embeddingModel,
                                RAGCacheService cacheService,
                                SysUserMapper userMapper,
-                               QwenVisionService visionService) {
+                               ParserRouter parserRouter,
+                               ElementAwareChunker elementAwareChunker) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.minioClient = minioClient;
-        this.chunker = chunker;
         this.milvusClient = milvusClient;
         this.embeddingModel = embeddingModel;
         this.cacheService = cacheService;
         this.userMapper = userMapper;
-        this.visionService = visionService;
+        this.parserRouter = parserRouter;
+        this.elementAwareChunker = elementAwareChunker;
     }
 
     @Override
@@ -236,12 +231,16 @@ public class DocumentServiceImpl implements DocumentService {
     // ==================== 核心流水线 ====================
 
     /**
-     * Tika 解析 → SmartChunker 切片 → Milvus 向量化
+     * 统一解析流水线：ParserRouter（自动选择最优解析器）→ ElementAwareChunker 切片 → Milvus 向量化
      *
-     * 扫描件 PDF 检测：Tika 解析文本 < ocrMinChars 时，自动使用 Qwen-VL OCR 提取文字
+     * <p>ParserRouter 自动按 fileType 选择解析器并处理故障降级：
+     * <ul>
+     *   <li>PDF → Qwen-VL (100) → 降级 Tika (10)</li>
+     *   <li>docx/xlsx/pptx → POI (90) → 降级 Tika (10)</li>
+     *   <li>txt/md → Tika (10)</li>
+     * </ul>
      */
     private void parseAndVectorize(EkDocument doc, MultipartFile file) {
-        // 提前读取文件字节（parseWithTika 会消费 MultipartFile 流，后续 OCR 需复用）
         byte[] fileBytes;
         try {
             fileBytes = file.getBytes();
@@ -252,68 +251,20 @@ public class DocumentServiceImpl implements DocumentService {
             return;
         }
 
-        String fullText = parseWithTika(file);
-
-        // 扫描件检测：文本量不足 → 尝试视觉 OCR
-        if (isScannedPdf(fullText, file)) {
-            log.info("检测到扫描件 PDF: docId={}, Tika 仅解析 {} 字符, 启动 Qwen-VL OCR",
-                    doc.getId(), fullText != null ? fullText.length() : 0);
-            try {
-                String ocrText = ocrWithVision(fileBytes);
-                if (ocrText != null && !ocrText.isBlank()) {
-                    fullText = ocrText;
-                    log.info("Qwen-VL OCR 提取成功: docId={}, {} 字符", doc.getId(), fullText.length());
-                } else {
-                    log.warn("Qwen-VL OCR 提取为空: docId={}, 回退到 Tika 结果", doc.getId());
-                }
-            } catch (Exception e) {
-                log.error("Qwen-VL OCR 失败: docId={}, 回退到 Tika 结果", doc.getId(), e);
-            }
-        }
+        // 统一解析入口 — ParserRouter 自动路由 + 降级
+        ParsedDocument parsed = parserRouter.parse(fileBytes, file.getOriginalFilename());
+        String fullText = parsed.markdown();
 
         doc.setParsedContent(fullText);
         documentMapper.updateById(doc);
-        log.info("文档解析完成: docId={}, {} 字符", doc.getId(), fullText.length());
+        log.info("文档解析完成: docId={}, engine={}, {} 字符, {} 页",
+                doc.getId(), parsed.metadata().engine(), fullText.length(), parsed.pageCount());
 
         vectorizeDocument(doc);
     }
 
-    /** 判断是否为扫描件 PDF */
-    private boolean isScannedPdf(String text, MultipartFile file) {
-        String ext = getFileType(file.getOriginalFilename());
-        if (!"pdf".equals(ext)) return false;
-        int charCount = text != null ? text.trim().length() : 0;
-        return charCount < ocrMinChars;
-    }
-
-    /** 使用 Qwen-VL 逐页提取扫描件文字 */
-    private String ocrWithVision(byte[] pdfBytes) throws Exception {
-        PdfImageRenderer renderer = new PdfImageRenderer();
-        List<byte[]> pageImages = renderer.renderPages(pdfBytes);
-
-        if (pageImages.isEmpty()) {
-            throw new BizException(500, "PDF 渲染无页面");
-        }
-
-        log.info("扫描件 OCR 开始: {} 页", pageImages.size());
-        StringBuilder fullText = new StringBuilder();
-        for (int i = 0; i < pageImages.size(); i++) {
-            long t0 = System.currentTimeMillis();
-            String pageText = visionService.extractText(pageImages.get(i), i + 1);
-            long elapsed = System.currentTimeMillis() - t0;
-
-            if (!pageText.isBlank()) {
-                fullText.append(pageText).append("\n\n");
-                log.info("  第 {} 页 OCR 完成: {} 字符, {}ms", i + 1, pageText.length(), elapsed);
-            } else {
-                log.warn("  第 {} 页 OCR 为空: {}ms", i + 1, elapsed);
-            }
-        }
-        return fullText.toString().trim();
-    }
-
     /**
-     * 切片 + 写入 MySQL + 写入 Milvus（Dense + Sparse 向量）
+     * 切片（ElementAwareChunker）→ 写入 MySQL → 写入 Milvus（Dense + Sparse 向量）
      */
     private void vectorizeDocument(EkDocument doc) {
         String text = doc.getParsedContent();
@@ -323,7 +274,7 @@ public class DocumentServiceImpl implements DocumentService {
             return;
         }
 
-        List<String> chunks = chunker.chunk(text);
+        List<String> chunks = elementAwareChunker.chunk(text);
         log.info("切片完成: docId={}, {} 片", doc.getId(), chunks.size());
 
         if (chunks.isEmpty()) {
@@ -365,6 +316,7 @@ public class DocumentServiceImpl implements DocumentService {
             row.addProperty("document_id", doc.getId().toString());
             row.addProperty("title", doc.getTitle());
             row.addProperty("chunk_index", String.valueOf(i));
+            row.addProperty("space_id", doc.getSpaceId());
 
             rows.add(row);
         }
@@ -393,30 +345,6 @@ public class DocumentServiceImpl implements DocumentService {
             result.add(TextTokenizer.tokenize(chunk));
         }
         return result;
-    }
-
-    // ==================== Tika 文本提取 ====================
-
-    private String parseWithTika(MultipartFile file) {
-        Path tempFile = null;
-        try {
-            String originalName = file.getOriginalFilename();
-            String suffix = originalName != null && originalName.contains(".")
-                    ? originalName.substring(originalName.lastIndexOf(".")) : ".tmp";
-            tempFile = Files.createTempFile("knowbrain-", suffix);
-            file.transferTo(tempFile.toFile());
-
-            TikaDocumentReader reader = new TikaDocumentReader(new FileSystemResource(tempFile.toFile()));
-            return reader.get().stream()
-                    .map(Document::getContent)
-                    .reduce("", (a, b) -> a + "\n" + b);
-        } catch (Exception e) {
-            throw new BizException(500, "Tika 解析失败: " + e.getMessage());
-        } finally {
-            if (tempFile != null) {
-                try { Files.deleteIfExists(tempFile); } catch (Exception ignored) {}
-            }
-        }
     }
 
     // ==================== MinIO 操作 ====================
@@ -462,8 +390,11 @@ public class DocumentServiceImpl implements DocumentService {
         String name = fileName.toLowerCase();
         if (name.endsWith(".pdf")) return "pdf";
         if (name.endsWith(".docx") || name.endsWith(".doc")) return "docx";
+        if (name.endsWith(".xlsx") || name.endsWith(".xls")) return "xlsx";
+        if (name.endsWith(".pptx") || name.endsWith(".ppt")) return "pptx";
         if (name.endsWith(".txt")) return "txt";
         if (name.endsWith(".md")) return "md";
+        if (name.endsWith(".csv")) return "csv";
         return "unknown";
     }
 }

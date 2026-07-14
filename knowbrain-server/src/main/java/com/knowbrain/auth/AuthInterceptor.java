@@ -77,9 +77,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         String path = request.getRequestURI();
         if (path.startsWith("/api/v1/admin/")) {
             String role = (String) claims.get("role");
-            if ("ADMIN".equals(role)) {
+            if (RoleEnum.ADMIN.matches(role)) {
                 // ADMIN 全部放行
-            } else if ("MANAGER".equals(role)) {
+            } else if (RoleEnum.MANAGER.matches(role)) {
                 if (!"GET".equalsIgnoreCase(request.getMethod())) {
                     writeJson(response, 403, "知识管理员仅有只读权限，如需写操作请联系系统管理员");
                     return false;

@@ -2,6 +2,7 @@ package com.knowbrain.space;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.knowbrain.auth.RoleEnum;
 import com.knowbrain.auth.SysUser;
 import com.knowbrain.auth.SysUserMapper;
 import com.knowbrain.permission.PermissionService;
@@ -64,7 +65,7 @@ public class SpaceServiceImpl implements SpaceService {
 
         // 填充 isOwner：ADMIN 对所有空间为 owner，普通用户仅对自己的空间
         SysUser currentUser = userMapper.selectById(userId);
-        boolean isAdmin = currentUser != null && "ADMIN".equals(currentUser.getRole());
+        boolean isAdmin = currentUser != null && RoleEnum.ADMIN.matches(currentUser.getRole());
         for (Space s : result.getRecords()) {
             s.setIsOwner(isAdmin || s.getOwnerId().equals(userId));
         }

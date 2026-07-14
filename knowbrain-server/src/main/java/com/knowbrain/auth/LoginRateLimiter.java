@@ -1,84 +1,104 @@
 package com.knowbrain.auth;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 
 /**
- * 登录频率限制 — 基于 IP 的内存计数器
+ * 登录频率限制 — 基于 Redis 滑动窗口
  * 防止暴力破解：同一 IP 5 分钟内失败 5 次后锁定 15 分钟
+ *
+ * 多实例部署安全：Redis 作为共享计数器，所有实例一致限流。
  */
 @Slf4j
 @Component
 public class LoginRateLimiter {
 
     private static final int MAX_FAILURES = 5;
-    private static final int FAILURE_WINDOW_MINUTES = 5;
-    private static final int LOCK_MINUTES = 15;
+    private static final int FAILURE_WINDOW_SECONDS = 300;  // 5 分钟
+    private static final int LOCK_SECONDS = 900;             // 15 分钟
 
-    private final Map<String, FailureRecord> records = new ConcurrentHashMap<>();
+    private static final String KEY_PREFIX = "kb:rate:login:";
+    private static final String LOCK_PREFIX = "kb:rate:login:lock:";
 
     /**
-     * 检查是否允许该 IP 尝试登录
+     * Lua 脚本：滑动窗口记录失败 + 检查是否需要锁定
+     *
+     * KEYS[1] = 失败记录 key  (kb:rate:login:{ip})
+     * KEYS[2] = 锁定 key      (kb:rate:login:lock:{ip})
+     * ARGV[1] = 当前时间戳 (ms)
+     * ARGV[2] = 失败窗口 (ms)
+     * ARGV[3] = 最大失败次数
+     * ARGV[4] = 锁定时长 (秒)
+     *
+     * 返回: 1=触发锁定, 0=正常记录
+     */
+    private static final String LUA_RECORD_FAILURE =
+            "redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, " +
+            "  tonumber(ARGV[1]) - tonumber(ARGV[2])) " +
+            "local now = ARGV[1] " +
+            "redis.call('ZADD', KEYS[1], now, now .. ':' .. redis.call('ZCARD', KEYS[1])) " +
+            "redis.call('EXPIRE', KEYS[1], math.ceil(tonumber(ARGV[2]) / 1000) + 60) " +
+            "if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[3]) then " +
+            "  redis.call('SET', KEYS[2], now, 'EX', ARGV[4]) " +
+            "  redis.call('DEL', KEYS[1]) " +
+            "  return 1 " +
+            "end " +
+            "return 0";
+
+    private final StringRedisTemplate redis;
+    private final DefaultRedisScript<Long> recordScript;
+
+    public LoginRateLimiter(StringRedisTemplate redis) {
+        this.redis = redis;
+        this.recordScript = new DefaultRedisScript<>();
+        this.recordScript.setScriptText(LUA_RECORD_FAILURE);
+        this.recordScript.setResultType(Long.class);
+    }
+
+    /**
+     * 检查该 IP 是否被锁定
      */
     public boolean allow(String ip) {
-        cleanExpired();
-        FailureRecord record = records.get(ip);
-        if (record == null) return true;
-
-        long lockUntil = record.firstFailureTime + LOCK_MINUTES * 60_000L;
-        if (record.failureCount >= MAX_FAILURES && System.currentTimeMillis() < lockUntil) {
-            log.warn("登录限速: IP={} 已被锁定, 失败次数={}", ip, record.failureCount);
+        Boolean locked = redis.hasKey(LOCK_PREFIX + ip);
+        if (Boolean.TRUE.equals(locked)) {
+            Long ttl = redis.getExpire(LOCK_PREFIX + ip);
+            log.warn("登录限速: IP={} 锁定中, 剩余{}秒", ip, ttl != null ? ttl : 0);
             return false;
-        }
-        if (record.failureCount >= MAX_FAILURES && System.currentTimeMillis() >= lockUntil) {
-            records.remove(ip);
         }
         return true;
     }
 
-    /** 记录一次登录失败 */
+    /** 记录一次登录失败，若达到阈值则触发锁定 */
     public void recordFailure(String ip) {
-        FailureRecord record = records.computeIfAbsent(ip, k -> new FailureRecord());
-        long windowStart = System.currentTimeMillis() - FAILURE_WINDOW_MINUTES * 60_000L;
+        String key = KEY_PREFIX + ip;
+        String lockKey = LOCK_PREFIX + ip;
 
-        if (record.firstFailureTime < windowStart) {
-            record.failureCount = 0;
-            record.firstFailureTime = System.currentTimeMillis();
+        Long result = redis.execute(recordScript,
+                List.of(key, lockKey),
+                String.valueOf(System.currentTimeMillis()),
+                String.valueOf(FAILURE_WINDOW_SECONDS * 1000L),
+                String.valueOf(MAX_FAILURES),
+                String.valueOf(LOCK_SECONDS));
+
+        if (result != null && result == 1) {
+            log.warn("登录限速触发锁定: IP={}, 锁定{}秒", ip, LOCK_SECONDS);
+        } else {
+            log.debug("登录失败记录: IP={}", ip);
         }
-        record.failureCount++;
-        log.debug("登录失败: IP={}, 累计失败={}", ip, record.failureCount);
     }
 
-    /** 登录成功后清除该 IP 的失败记录 */
+    /** 登录成功后清除该 IP 的失败记录和锁定 */
     public void clearFailure(String ip) {
-        records.remove(ip);
+        redis.delete(List.of(KEY_PREFIX + ip, LOCK_PREFIX + ip));
     }
 
     /** 获取剩余锁定秒数，0 表示未锁定 */
     public long remainingLockSeconds(String ip) {
-        FailureRecord record = records.get(ip);
-        if (record == null || record.failureCount < MAX_FAILURES) return 0;
-
-        long lockUntil = record.firstFailureTime + LOCK_MINUTES * 60_000L;
-        long remaining = (lockUntil - System.currentTimeMillis()) / 1000;
-        return Math.max(0, remaining);
-    }
-
-    private void cleanExpired() {
-        long now = System.currentTimeMillis();
-        long expireThreshold = now - (LOCK_MINUTES + FAILURE_WINDOW_MINUTES) * 60_000L;
-        records.entrySet().removeIf(e ->
-                e.getValue().failureCount < MAX_FAILURES
-                        ? e.getValue().firstFailureTime < now - FAILURE_WINDOW_MINUTES * 60_000L
-                        : e.getValue().firstFailureTime < expireThreshold
-        );
-    }
-
-    private static class FailureRecord {
-        long firstFailureTime = System.currentTimeMillis();
-        int failureCount;
+        Long ttl = redis.getExpire(LOCK_PREFIX + ip);
+        return ttl != null && ttl > 0 ? ttl : 0;
     }
 }

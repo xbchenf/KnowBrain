@@ -16,3 +16,8 @@ logging:
   level:
     com.knowbrain: INFO
     org.springframework.ai: INFO
+
+# MyBatis-Plus（生产环境不输出 SQL）
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

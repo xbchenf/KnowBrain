@@ -77,6 +77,13 @@ public class RAGServiceImpl implements RAGService {
     @Retryable(retryFor = Exception.class, maxAttempts = 2, backoff = @Backoff(delay = 500))
     @Override
     public ChatResponse chat(String question, List<Long> spaceIds, List<Map<String, String>> history, String category) {
+        return chat(question, spaceIds, history, category, false);
+    }
+
+    @CircuitBreaker(name = "llm-chat", fallbackMethod = "chatFallback")
+    @Retryable(retryFor = Exception.class, maxAttempts = 2, backoff = @Backoff(delay = 500))
+    @Override
+    public ChatResponse chat(String question, List<Long> spaceIds, List<Map<String, String>> history, String category, boolean skipFaq) {
         long tStart = System.currentTimeMillis();
         long tPreprocess = tStart, tCacheCheck = tStart, tSearch = tStart, tLlm = tStart, tCacheWrite = tStart;
         var requestSample = io.micrometer.core.instrument.Timer.start();
@@ -99,7 +106,8 @@ public class RAGServiceImpl implements RAGService {
         tPreprocess = System.currentTimeMillis();
 
         // 2. FAQ 命中 → 直接返回预设答案（短路，不依赖 LLM）
-        if (pre.isFaqMatched()) {
+        //    评测模式下跳过 FAQ 短路，强制走完整检索+LLM 流水线
+        if (!skipFaq && pre.isFaqMatched()) {
             metrics.recordFaqHit();
             var faqSource = new ChatResponse.SourceInfo(
                     "📋 知识库预设问答", null, null,
@@ -115,9 +123,9 @@ public class RAGServiceImpl implements RAGService {
 
         String processed = pre.rewrittenQuery();
 
-        // 3. 混合检索 Top-5 相关切片（带空间过滤 + 可选分类过滤）
+        // 3. 混合检索（自适应 topK：复杂/多步查询扩大检索量，覆盖跨文档需求）
         var searchSample = io.micrometer.core.instrument.Timer.start();
-        List<SearchResult> sources = hybridSearchService.search(processed, 5, spaceIds, category);
+        List<SearchResult> sources = hybridSearchService.search(processed, adaptiveTopK(question), spaceIds, category);
         searchSample.stop(metrics.searchTimer());
         tSearch = System.currentTimeMillis();
 
@@ -261,9 +269,9 @@ public class RAGServiceImpl implements RAGService {
 
         String processed = pre.rewrittenQuery();
 
-        // 3. 混合检索（带空间过滤 + 可选分类过滤）
+        // 3. 混合检索（自适应 topK：复杂/多步查询扩大检索量，覆盖跨文档需求）
         var searchSample = io.micrometer.core.instrument.Timer.start();
-        List<SearchResult> sources = hybridSearchService.search(processed, 5, spaceIds, category);
+        List<SearchResult> sources = hybridSearchService.search(processed, adaptiveTopK(question), spaceIds, category);
         searchSample.stop(metrics.searchTimer());
 
         // 4. 无结果 → 兜底
@@ -333,6 +341,29 @@ public class RAGServiceImpl implements RAGService {
     // ==================== 辅助方法 ====================
 
     /**
+     * 自适应检索量 — 复杂/多步查询扩大 topK 以覆盖跨文档需求
+     */
+    private int adaptiveTopK(String question) {
+        return isComplexQuery(question) ? 10 : 5;
+    }
+
+    /**
+     * 检测查询是否需要跨文档/多步信息整合。
+     * 判断依据：长度、多问号、顺序/步骤关键词。
+     */
+    private boolean isComplexQuery(String question) {
+        if (question == null) return false;
+        int len = question.length();
+        if (len > 30) return true;
+        int firstQ = question.indexOf('？');
+        if (firstQ >= 0 && question.indexOf('？', firstQ + 1) >= 0) return true;
+        for (String kw : List.of("顺序", "步骤", "先", "然后", "之后", "流程", "先后", "综合")) {
+            if (question.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    /**
      * CircuitBreaker 降级方法：LLM 熔断时跳过生成，直接返回检索原文
      */
     @SuppressWarnings("unused")
@@ -340,7 +371,7 @@ public class RAGServiceImpl implements RAGService {
                                        List<Map<String, String>> history, String category,
                                        Throwable t) {
         log.warn("LLM CircuitBreaker 熔断降级: {}", t.getMessage());
-        List<SearchResult> sources = hybridSearchService.search(question, 5, spaceIds, category);
+        List<SearchResult> sources = hybridSearchService.search(question, adaptiveTopK(question), spaceIds, category);
         String fallback = buildFallbackAnswer(sources);
         List<ChatResponse.SourceInfo> fallbackSources = sources.stream()
                 .map(s -> new ChatResponse.SourceInfo(

@@ -1,6 +1,8 @@
 package com.knowbrain.permission;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.knowbrain.auth.DepartmentMapper;
+import com.knowbrain.auth.RoleEnum;
 import com.knowbrain.auth.SysUser;
 import com.knowbrain.auth.SysUserMapper;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
@@ -10,9 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 
 /**
  * 权限管理服务 — 可见性 + 部门 + 角色 三因子权限模型
@@ -39,6 +39,7 @@ public class PermissionService {
     private final SpaceMapper spaceMapper;
     private final SpaceMemberMapper memberMapper;
     private final SysUserMapper userMapper;
+    private final DepartmentMapper departmentMapper;
 
     /**
      * 检查用户是否有权读取空间
@@ -53,7 +54,7 @@ public class PermissionService {
         if (space == null) throw new BizException(404, "空间不存在");
 
         // 0. ADMIN → 全局可读
-        if ("ADMIN".equals(getUserRole(userId))) return;
+        if (RoleEnum.ADMIN.matches(getUserRole(userId))) return;
 
         // 1. PUBLIC → 所有登录用户放行
         if ("PUBLIC".equals(space.getVisibility())) return;
@@ -61,10 +62,10 @@ public class PermissionService {
         // 2. OWNER → 放行
         if (space.getOwnerId().equals(userId)) return;
 
-        // 3. TEAM → 部门匹配
+        // 3. TEAM → 部门匹配（含祖先递归）
         if ("TEAM".equals(space.getVisibility())) {
-            Long userDeptId = getUserDepartmentId(userId);
-            if (userDeptId != null && isInDepartmentScope(space.getDepartmentScope(), userDeptId)) {
+            Set<Long> userDeptIds = getUserDeptAndAncestors(userId);
+            if (!userDeptIds.isEmpty() && isInDepartmentScope(space.getDepartmentScope(), userDeptIds)) {
                 return;
             }
             throw new BizException(403, "无权访问此空间（部门不匹配）");
@@ -88,17 +89,17 @@ public class PermissionService {
 
         // ADMIN → 全局可写
         String role = getUserRole(userId);
-        if ("ADMIN".equals(role)) return;
+        if (RoleEnum.ADMIN.matches(role)) return;
 
         // SpaceOwner → 自己的空间可写
         if (space.getOwnerId().equals(userId)) return;
 
         // MANAGER → 公开空间 + 本部门团队空间（不可跨部门管理）
-        if ("MANAGER".equals(role)) {
+        if (RoleEnum.MANAGER.matches(role)) {
             if ("PUBLIC".equals(space.getVisibility())) return;
             if ("TEAM".equals(space.getVisibility())) {
-                Long userDeptId = getUserDepartmentId(userId);
-                if (userDeptId != null && isInDepartmentScope(space.getDepartmentScope(), userDeptId)) {
+                Set<Long> userDeptIds = getUserDeptAndAncestors(userId);
+                if (!userDeptIds.isEmpty() && isInDepartmentScope(space.getDepartmentScope(), userDeptIds)) {
                     return;
                 }
             }
@@ -113,7 +114,7 @@ public class PermissionService {
         if (space == null) throw new BizException(404, "空间不存在");
 
         String role = getUserRole(userId);
-        if ("ADMIN".equals(role)) return;
+        if (RoleEnum.ADMIN.matches(role)) return;
         if (space.getOwnerId().equals(userId)) return;
 
         throw new BizException(403, "仅空间创建者或系统管理员可执行此操作");
@@ -178,14 +179,14 @@ public class PermissionService {
         List<Long> ids = new ArrayList<>();
 
         // 0. ADMIN → 全局所有空间可见
-        if ("ADMIN".equals(getUserRole(userId))) {
+        if (RoleEnum.ADMIN.matches(getUserRole(userId))) {
             for (Space s : allSpaces) {
                 ids.add(s.getId());
             }
             return ids;
         }
 
-        Long userDeptId = getUserDepartmentId(userId);
+        Set<Long> userDeptIds = getUserDeptAndAncestors(userId);
 
         for (Space s : allSpaces) {
             // 1. PUBLIC → 所有登录用户
@@ -200,9 +201,9 @@ public class PermissionService {
                 continue;
             }
 
-            // 3. TEAM → 部门匹配
+            // 3. TEAM → 部门匹配（含祖先递归）
             if ("TEAM".equals(s.getVisibility())) {
-                if (userDeptId != null && isInDepartmentScope(s.getDepartmentScope(), userDeptId)) {
+                if (!userDeptIds.isEmpty() && isInDepartmentScope(s.getDepartmentScope(), userDeptIds)) {
                     ids.add(s.getId());
                 }
                 continue;
@@ -242,13 +243,42 @@ public class PermissionService {
     }
 
     /**
-     * 检查用户部门是否在空间的部门可见范围内
+     * 检查用户部门（含祖先）是否在空间的部门可见范围内
      * departmentScope 格式："1,2,5"（逗号分隔的部门 ID）
+     * userDeptIds 已包含用户直属部门 + 所有祖先部门 ID
      */
-    private boolean isInDepartmentScope(String departmentScope, Long userDeptId) {
+    private boolean isInDepartmentScope(String departmentScope, Set<Long> userDeptIds) {
         if (departmentScope == null || departmentScope.isBlank()) return false;
         return Arrays.stream(departmentScope.split(","))
                 .map(String::trim)
-                .anyMatch(id -> id.equals(String.valueOf(userDeptId)));
+                .map(Long::parseLong)
+                .anyMatch(userDeptIds::contains);
+    }
+
+    /**
+     * 获取用户直属部门及其所有祖先部门 ID（Java 遍历，兼容 H2/MySQL）
+     * 例如：用户部门 1-1 (id=3, parent_id=1) → 返回 Set[3, 1]
+     * 用于 TEAM 空间部门范围匹配时支持父子部门层级
+     */
+    private Set<Long> getUserDeptAndAncestors(Long userId) {
+        Long deptId = getUserDepartmentId(userId);
+        if (deptId == null) return Collections.emptySet();
+
+        // 一次性查出所有部门，构建 id → parentId 映射（部门数量少，内存遍历远快于递归 SQL）
+        List<com.knowbrain.auth.Department> allDepts = departmentMapper.selectList(null);
+        Map<Long, Long> parentMap = new HashMap<>();
+        for (com.knowbrain.auth.Department d : allDepts) {
+            parentMap.put(d.getId(), d.getParentId());
+        }
+
+        // 沿 parentId 链向上遍历，收集所有祖先 ID
+        Set<Long> result = new HashSet<>();
+        result.add(deptId); // 自身
+        Long current = parentMap.get(deptId);
+        while (current != null && current > 0) {
+            result.add(current);
+            current = parentMap.get(current); // 继续向上
+        }
+        return result;
     }
 }

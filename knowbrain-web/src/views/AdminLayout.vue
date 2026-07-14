@@ -45,6 +45,15 @@
           <span>反馈统计</span>
         </router-link>
 
+        <router-link v-if="isAdmin" to="/admin/im" class="nav-item" :class="{ active: route.path === '/admin/im' }">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="4"/><path d="M7 12h3l2-6 2 12 2-6h3"/></svg>
+          <span>IM 集成</span>
+        </router-link>
+
+        <router-link v-if="isAdmin" to="/admin/evaluation" class="nav-item" :class="{ active: route.path === '/admin/evaluation' }">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+          <span>评测管理</span>
+        </router-link>
         <router-link v-if="isAdmin" to="/admin/audit-logs" class="nav-item" :class="{ active: route.path === '/admin/audit-logs' }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span>审计日志</span>
@@ -98,6 +107,7 @@ const pageTitles: Record<string, string> = {
   '/admin/scenarios': '场景配置',
   '/admin/stats': '使用统计',
   '/admin/feedback': '反馈统计',
+  '/admin/evaluation': '评测管理',
   '/admin/audit-logs': '审计日志'
 }
 const pageTitle = computed(() => pageTitles[route.path] || 'KnowBrain 管理后台')

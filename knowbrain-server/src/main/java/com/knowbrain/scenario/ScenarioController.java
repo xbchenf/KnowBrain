@@ -1,6 +1,7 @@
 package com.knowbrain.scenario;
 
 import com.knowbrain.audit.Auditable;
+import com.knowbrain.auth.RoleEnum;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.common.Result;
 import com.knowbrain.scenario.entity.ScenarioCategory;
@@ -36,7 +37,7 @@ public class ScenarioController {
     /** 所有写操作统一校验 ADMIN 角色 */
     private void assertAdmin(HttpServletRequest request) {
         Object role = request.getAttribute("role");
-        if (role == null || !"ADMIN".equals(role.toString())) {
+        if (role == null || !RoleEnum.ADMIN.matches(role.toString())) {
             throw new BizException(403, "需要管理员权限");
         }
     }

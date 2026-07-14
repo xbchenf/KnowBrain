@@ -1,0 +1,24 @@
+Department,Name,Email,Extension,Location,Role,Status
+Infrastructure,Zhang Wei,zhangwei@company.com,x8888,Building A Floor 3,Director,Active
+Infrastructure,Wang Fang,wangfang@company.com,x8889,Building A Floor 3,Sr. Network Engineer,Active
+Infrastructure,Li Ming,liming@company.com,x8890,Building A Floor 3,Systems Administrator,Active
+Infrastructure,Chen Jie,chenjie@company.com,x8891,Building A Floor 3,DevOps Engineer,Active
+Infrastructure,Huang Li,huangli@company.com,x8892,Building A Floor 3,DBA,On Leave
+Engineering,Li Qiang,liqiang@company.com,x9001,Building B Floor 5,VP Engineering,Active
+Engineering,Zhao Yun,zhaoyun@company.com,x9002,Building B Floor 5,Backend Lead,Active
+Engineering,Sun Yan,sunyan@company.com,x9003,Building B Floor 5,Frontend Lead,Active
+Engineering,Zhou Tao,zhoutao@company.com,x9004,Building B Floor 5,QA Manager,Active
+Engineering,Wu Jing,wujing@company.com,x9005,Building B Floor 5,Sr. SRE,Active
+HR,Xu Mei,xumei@company.com,x8001,Building A Floor 4,HR Director,Active
+HR,Ma Lin,malin@company.com,x8002,Building A Floor 4,HRBP (Engineering),Active
+HR,Liu Yang,liuyang@company.com,x8003,Building A Floor 4,Recruiter,Active
+Finance,He Qian,heqian@company.com,x7001,Building A Floor 6,CFO,Active
+Finance,Lin Xiao,linxiao@company.com,x7002,Building A Floor 6,Accountant,Active
+Finance,Peng Bo,pengbo@company.com,x7003,Building A Floor 6,Financial Analyst,Active
+Management,Guo Feng,guofeng@company.com,x6001,Building A Floor 8,CEO,Active
+Management,Tan Rui,tanrui@company.com,x6002,Building A Floor 8,CTO,Active
+Management,Deng Hua,denghua@company.com,x6003,Building A Floor 8,COO,Active
+AI Lab,Cao Yang,caoyang@company.com,x9501,Building C Floor 2,Lead Researcher,Active
+AI Lab,Shen Wei,shenwei@company.com,x9502,Building C Floor 2,ML Engineer,Active
+AI Lab,Yuan Bo,yuanbo@company.com,x9503,Building C Floor 2,Data Scientist,Active
+AI Lab,Jiang Tao,jiangtao@company.com,x9504,Building C Floor 2,NLP Engineer,Active

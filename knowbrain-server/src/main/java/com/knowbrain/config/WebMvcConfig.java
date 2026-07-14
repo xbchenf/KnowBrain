@@ -23,7 +23,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         // 健康检查
                         "/api/v1/health",
                         // 认证接口（登录/注册）
-                        "/api/v1/auth/**"
+                        "/api/v1/auth/**",
+                        // IM Bot 回调（企微/钉钉/飞书自有签名验证机制，不走 JWT）
+                        "/api/v1/im/**"
                 );
     }
 }

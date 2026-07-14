@@ -1,0 +1,60 @@
+===========================================
+VPN Configuration Guide (Internal Document)
+===========================================
+
+1. Prerequisites
+----------------
+Before configuring VPN, ensure you have:
+- Company-issued laptop with Windows 10/11 or macOS 13+
+- Valid SSO account (Okta) with MFA enrolled
+- Internet connection (corporate Wi-Fi or home broadband)
+
+2. Step-by-Step Setup
+----------------------
+Step 1: Download the VPN client
+  - Windows: https://intranet.company.com/software/openconnect-win64.msi
+  - macOS:   https://intranet.company.com/software/openconnect-mac.dmg
+  - Linux:   `apt install openconnect` (Ubuntu) / `yum install openconnect` (CentOS)
+
+Step 2: Install and launch
+  - Windows: run the MSI installer as Administrator, reboot if prompted
+  - macOS: drag to Applications, approve in System Preferences > Security
+  - First launch: click the tray icon → "New Profile"
+
+Step 3: Configure the profile
+  Profile Name: Company VPN
+  Server:       vpn.company.com:443
+  Protocol:     AnyConnect
+  Auth Method:  SSO (Okta) + TOTP
+
+Step 4: Connect
+  - Click "Connect" and complete Okta login in the browser popup
+  - Enter your 6-digit TOTP code when prompted
+  - The tray icon turns green when connected
+
+3. Troubleshooting
+------------------
+Problem: "Authentication Failed"
+  → Verify your TOTP code is current (30-second validity window)
+  → Sync your authenticator app time via Settings
+
+Problem: "Certificate Not Trusted"
+  → Download and install internal CA: https://pki.company.com/root-ca.cer
+  → Windows: double-click → "Install Certificate" → "Trusted Root CA"
+  → macOS: open Keychain Access → drag cert to "System"
+
+Problem: Connected but no internal websites load
+  → Run: ipconfig /flushdns (Windows) or dscacheutil -flushcache (macOS)
+  → Check proxy settings: no proxy for *.company.com
+  → If still broken, open ticket at https://helpdesk.company.com
+
+Problem: Frequent disconnects every 5-10 minutes
+  → Switch from Wi-Fi to wired Ethernet
+  → Ensure MTU is 1400 or lower (some ISP routers fragment large packets)
+  → Update VPN client to latest version
+
+4. Support
+----------
+IT Helpdesk Portal:  https://helpdesk.company.com
+Internal Extension:   x5555 (Mon-Fri 9:00-18:00 CST)
+Emergency After-hours: +86-10-8888-7777 (on-call engineer)

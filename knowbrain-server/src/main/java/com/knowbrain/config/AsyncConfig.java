@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import org.springframework.core.task.TaskExecutor;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -30,6 +31,24 @@ public class AsyncConfig {
         executor.setAwaitTerminationSeconds(10);
         executor.initialize();
         log.info("Audit log async executor initialized: core=2, max=4, queue=500");
+        return executor;
+    }
+
+    /**
+     * 通用 TaskExecutor — 评测等后台任务使用
+     */
+    @Bean
+    public TaskExecutor taskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(10);
+        executor.setThreadNamePrefix("eval-task-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        log.info("General TaskExecutor initialized: core=1, max=2, queue=10");
         return executor;
     }
 }

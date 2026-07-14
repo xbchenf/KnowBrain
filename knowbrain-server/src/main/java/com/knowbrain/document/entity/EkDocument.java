@@ -21,7 +21,7 @@ public class EkDocument {
     /** 原始文件名 */
     private String fileName;
 
-    /** 文件类型：pdf / docx / txt / md */
+    /** 文件类型：pdf / docx / xlsx / pptx / txt / md */
     private String fileType;
 
     /** 文件大小（字节） */

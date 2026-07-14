@@ -18,7 +18,6 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * 混合检索服务 — Dense (语义 COSINE) + Sparse (BM25 jieba) → WeightedRanker 融合
@@ -88,8 +87,10 @@ public class HybridSearchService {
             return Collections.emptyList();
         }
 
-        // 多拉一些候选，补偿后置过滤的损失
-        int fetchK = spaceIds != null && !spaceIds.isEmpty() ? topK * 3 : topK;
+        // 多拉一些候选，补偿后置过滤的损失（分类过滤可能削减结果）
+        boolean filterBySpace = spaceIds != null && !spaceIds.isEmpty();
+        boolean filterByCategory = category != null && !category.isBlank();
+        int fetchK = (filterBySpace || filterByCategory) ? topK * 2 : topK;
 
         long t0 = System.currentTimeMillis();
 
@@ -125,14 +126,13 @@ public class HybridSearchService {
                 .searchRequests(List.of(denseSearch, sparseSearch))
                 .ranker(new WeightedRanker(List.of(denseWeight, sparseWeight)))
                 .topK(fetchK)
-                .outFields(List.of("content", "document_id", "title", "chunk_index"))
+                .outFields(List.of("content", "document_id", "title", "chunk_index", "space_id"))
                 .build();
 
         SearchResp resp = milvusClient.hybridSearch(hybridReq);
         long tMilvus = System.currentTimeMillis();
 
-        // 5. 映射结果 + 权限过滤
-        boolean filterBySpace = spaceIds != null && !spaceIds.isEmpty();
+        // 5. 映射结果 + 权限过滤（space_id 从 Milvus entity 直接读取，无需回查 MySQL）
         List<SearchResult> results = new ArrayList<>();
         if (resp.getSearchResults() != null) {
             for (List<SearchResp.SearchResult> batch : resp.getSearchResults()) {
@@ -151,19 +151,21 @@ public class HybridSearchService {
                         continue;
                     }
 
-                    // 查 MySQL：验证文档存在 + 获取 spaceId
-                    EkDocument ekDoc = documentMapper.selectById(docId);
-                    if (ekDoc == null) continue;
-
-                    // 空间权限过滤
-                    if (filterBySpace && !spaceIds.contains(ekDoc.getSpaceId())) {
-                        continue;
+                    // 空间权限过滤（从 entity 直接读 space_id，省去 MySQL 查询）
+                    if (filterBySpace) {
+                        Long spaceId = longValue(entity.get("space_id"));
+                        if (spaceId == null || !spaceIds.contains(spaceId)) {
+                            continue;
+                        }
                     }
 
-                    // 分类过滤（可选）
-                    if (category != null && !category.isBlank()
-                            && (ekDoc.getCategory() == null || !category.equals(ekDoc.getCategory()))) {
-                        continue;
+                    // 分类过滤（需回查 MySQL，category 信息不在 Milvus 中）
+                    if (filterByCategory) {
+                        EkDocument ekDoc = documentMapper.selectById(docId);
+                        if (ekDoc == null) continue;
+                        if (ekDoc.getCategory() == null || !category.equals(ekDoc.getCategory())) {
+                            continue;
+                        }
                     }
 
                     SearchResult result = new SearchResult();
@@ -237,6 +239,16 @@ public class HybridSearchService {
             return Integer.parseInt(obj.toString());
         } catch (NumberFormatException ignored) {
             return 0;
+        }
+    }
+
+    private Long longValue(Object obj) {
+        if (obj == null) return null;
+        if (obj instanceof Number n) return n.longValue();
+        try {
+            return Long.parseLong(obj.toString());
+        } catch (NumberFormatException ignored) {
+            return null;
         }
     }
 }

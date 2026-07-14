@@ -29,3 +29,8 @@ dist/
 
 # Docker
 docker/volumes/
+
+# 内部文档，不公开
+docs/KnowBrain-*.md
+# Playwright MCP 工具产物
+.playwright-mcp/

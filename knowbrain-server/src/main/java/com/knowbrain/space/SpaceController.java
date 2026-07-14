@@ -1,6 +1,7 @@
 package com.knowbrain.space;
 
 import com.knowbrain.audit.Auditable;
+import com.knowbrain.auth.RoleEnum;
 import com.knowbrain.common.Result;
 import com.knowbrain.permission.PermissionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -61,7 +62,7 @@ public class SpaceController {
         Space space = spaceService.getById(id);
         // 服务端判断当前用户是否可管理此空间
         String role = (String) req.getAttribute("role");
-        space.setIsOwner("ADMIN".equals(role) || space.getOwnerId().equals(userId));
+        space.setIsOwner(RoleEnum.ADMIN.matches(role) || space.getOwnerId().equals(userId));
         return Result.ok(space);
     }
 

@@ -92,11 +92,17 @@ knowbrain-server/
 │   │   ├── keyword/         # BM25 关键词检索
 │   │   └── rerank/          # 重排序
 │   ├── generation/          # LLM 生成（Prompt 拼装 + 溯源 + 后检）
+│   ├── evaluation/          # RAG 评测（数据集管理 + LLM-as-Judge）
 │   ├── permission/          # 文档级权限管控
 │   ├── space/               # 文档空间（Space → Document → Chunk）
 │   ├── feedback/            # 答案反馈（有用/无用）
 │   ├── statistics/          # 使用统计
 │   ├── scenario/            # 场景配置加载（种子数据、术语词典）
+│   ├── im/                   # 企业 IM 集成（企微/钉钉/飞书 Bot）
+│   │   ├── adapter/          # 平台适配器（Wecom/Dingtalk/Feishu）
+│   │   ├── entity/           # IM 实体（部门映射、用户身份）
+│   │   ├── mapper/           # MyBatis-Plus Mapper
+│   │   └── model/            # 统一消息模型
 │   └── websocket/           # WebSocket（可选，流式输出）
 ├── src/main/resources/
 │   ├── application.yml
@@ -251,3 +257,20 @@ categories 用于：文档上传分类 + 检索范围限定
 4. **LLM 是增强不是替代**：LLM 超时/失败 → 降级返回检索结果原文
 5. **高频问题缓存**：Redis 缓存热门问答，避免重复调 LLM
 6. **反馈闭环**：用户标记「无用」→ 记录 → 统计 → 驱动知识库改进
+
+---
+
+## 十、技术设计文档索引
+
+重要技术方案的详细设计存放于 `docs/` 目录：
+
+| 文档 | 内容 |
+|------|------|
+| [文档解析技术方案](docs/文档解析技术方案.md) | 文档解析入库链路设计：Qwen-VL(PDF主引擎)+POI(Office)+Tika(兜底) 三层架构、表格提取、结构感知分块、业界对标、MinerU/LibreOffice 未来增强评估 |
+| [企业 IM 集成技术方案](docs/企业IM集成技术方案.md) | 企微/钉钉/飞书 Bot 集成：双通道架构（HTTP回调+WebSocket Stream）、加解密、消息处理流水线、用户映射、部门映射、管理后台 |
+| [商业化可行性分析报告](docs/KnowBrain-商业化可行性分析报告.md) | 市场分析、竞争格局、商业模式、能力缺口、财务测算 |
+| [产品战略规划](docs/KnowBrain-产品战略规划.md) | 产品定位、架构、路线图 |
+| [RAG 评测体系技术方案](docs/RAG评测体系技术方案.md) | 评测数据集管理 + LLM-as-Judge 自动评分（Faithfulness/Relevance/Context Recall）+ 历史趋势追踪 |
+| [部署文档](docs/deployment.md) | Docker Compose 部署指南 |
+
+**解析链路实施前必读**：[文档解析技术方案](docs/文档解析技术方案.md)——包含完整的设计决策、业界对比和未来演进路径。

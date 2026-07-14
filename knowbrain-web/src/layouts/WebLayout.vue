@@ -82,7 +82,7 @@
 
     <!-- 主区域 -->
     <main class="main-area">
-      <router-view />
+      <router-view :key="chatKey" />
     </main>
   </div>
 </template>

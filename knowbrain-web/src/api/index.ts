@@ -171,6 +171,71 @@ export const getStats = () =>
 export const listAuditLogs = (params: Record<string, any>) =>
   api.get('/admin/audit-logs', { params })
 
+// ================== IM 集成管理 ==================
+export const listImDeptMappings = (params: Record<string, any>) =>
+  api.get('/admin/im/dept-mappings', { params })
+
+export const createImDeptMapping = (data: Record<string, any>) =>
+  api.post('/admin/im/dept-mappings', data)
+
+export const updateImDeptMapping = (id: number, data: Record<string, any>) =>
+  api.put(`/admin/im/dept-mappings/${id}`, data)
+
+export const deleteImDeptMapping = (id: number) =>
+  api.delete(`/admin/im/dept-mappings/${id}`)
+
+export const listImIdentities = (params: Record<string, any>) =>
+  api.get('/admin/im/identities', { params })
+
+export const getImUnboundUsers = (platform?: string) =>
+  api.get('/admin/im/identities', { params: { unboundOnly: true, platform, size: 200 } })
+
+export const bindImIdentity = (data: Record<string, any>) =>
+  api.post('/admin/im/identities', data)
+
+export const unbindImIdentity = (id: number) =>
+  api.delete(`/admin/im/identities/${id}`)
+
+export const getImDepartmentsInfo = (platform?: string) =>
+  api.get('/admin/im/departments-info', { params: platform ? { platform } : {} })
+
+// ================== RAG 评测管理 ==================
+export const listEvaluationDatasets = (params: Record<string, any>) =>
+  api.get('/admin/evaluation/datasets', { params })
+
+export const createEvaluationDataset = (data: Record<string, any>) =>
+  api.post('/admin/evaluation/datasets', data)
+
+export const deleteEvaluationDataset = (id: number) =>
+  api.delete(`/admin/evaluation/datasets/${id}`)
+
+export const listEvaluationQuestions = (datasetId: number, params: Record<string, any>) =>
+  api.get(`/admin/evaluation/datasets/${datasetId}/questions`, { params })
+
+export const addEvaluationQuestion = (datasetId: number, data: Record<string, any>) =>
+  api.post(`/admin/evaluation/datasets/${datasetId}/questions`, data)
+
+export const batchImportQuestions = (datasetId: number, questions: Record<string, any>[]) =>
+  api.post(`/admin/evaluation/datasets/${datasetId}/questions/batch`, questions)
+
+export const updateEvaluationQuestion = (datasetId: number, questionId: number, data: Record<string, any>) =>
+  api.put(`/admin/evaluation/datasets/${datasetId}/questions/${questionId}`, data)
+
+export const deleteEvaluationQuestion = (datasetId: number, questionId: number) =>
+  api.delete(`/admin/evaluation/datasets/${datasetId}/questions/${questionId}`)
+
+export const startEvaluationRun = (datasetId: number) =>
+  api.post('/admin/evaluation/runs', { datasetId })
+
+export const listEvaluationRuns = (params: Record<string, any>) =>
+  api.get('/admin/evaluation/runs', { params })
+
+export const getEvaluationRun = (id: number) =>
+  api.get(`/admin/evaluation/runs/${id}`)
+
+export const getEvaluationRunResults = (runId: number, params: Record<string, any>) =>
+  api.get(`/admin/evaluation/runs/${runId}/results`, { params })
+
 // ================== 公开 FAQ ==================
 export function listPublicFaq() {
   return api.get('/faq')

@@ -35,7 +35,9 @@ const router = createRouter({
         { path: 'scenarios', name: 'scenarios', component: () => import('../views/ScenarioView.vue') },
         { path: 'feedback', name: 'feedback', component: () => import('../views/FeedbackView.vue') },
         { path: 'stats', name: 'stats', component: () => import('../views/StatsView.vue') },
-        { path: 'audit-logs', name: 'audit-logs', component: () => import('../views/AuditLogView.vue') }
+        { path: 'audit-logs', name: 'audit-logs', component: () => import('../views/AuditLogView.vue') },
+        { path: 'im', name: 'im-integration', component: () => import('../views/ImIntegrationView.vue') },
+        { path: 'evaluation', name: 'evaluation', component: () => import('../views/EvaluationView.vue') }
       ]
     },
 

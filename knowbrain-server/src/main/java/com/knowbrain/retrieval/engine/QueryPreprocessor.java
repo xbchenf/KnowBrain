@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 /**
  * 查询预处理器
  *
- * 流水线：原始问题 → 术语改写 → 敏感词过滤 → FAQ 精确匹配 → 向量检索 → LLM 生成
+ * 流水线：原始问题 → LLM 改写（智能）→ Glossary 改写（规则兜底）→ 敏感词过滤 → FAQ 精确匹配
  *
  * FAQ 命中时直接返回预设答案（短路），跳过向量检索和 LLM 调用。
  */
@@ -22,6 +22,7 @@ public class QueryPreprocessor {
     private final GlossaryService glossaryService;
     private final FaqService faqService;
     private final SensitiveWordFilter sensitiveWordFilter;
+    private final QueryRewriteService queryRewriteService;
 
     /**
      * 预处理结果
@@ -62,7 +63,7 @@ public class QueryPreprocessor {
 
         String trimmed = rawQuery.trim();
 
-        // 1. FAQ 精确匹配（在术语改写之前，避免改写破坏问题文本匹配）
+        // 1. FAQ 精确匹配（在改写之前，避免改写破坏问题文本匹配）
         var faqResult = faqService.match(trimmed);
         if (faqResult != null) {
             String sanitized = sensitiveWordFilter.sanitize(trimmed);
@@ -71,13 +72,20 @@ public class QueryPreprocessor {
             return new Result(sanitized, faqResult.entry().getAnswer(), faqResult.entry().getQuestion());
         }
 
-        // 2. 术语映射：口语 → 正式术语
-        String rewritten = glossaryService.rewrite(trimmed);
+        // 2. LLM 智能改写（检测短查询/口语化 → LLM 扩展/规范化）
+        //    成功时跳过 glossary 规则替换，失败时静默降级
+        String rewritten = queryRewriteService.rewrite(trimmed);
+        boolean llmRewritten = rewritten != null;
 
-        // 3. 敏感词过滤
+        // 3. LLM 未触发或失败 → fallback 到 glossary 规则改写
+        if (!llmRewritten) {
+            rewritten = glossaryService.rewrite(trimmed);
+        }
+
+        // 4. 敏感词过滤
         rewritten = sensitiveWordFilter.sanitize(rewritten);
 
-        // 4. 改写后再试一次 FAQ 匹配（术语改写后可能命中新关键词）
+        // 5. 改写后再试一次 FAQ 匹配（改写后可能命中新关键词）
         if (!rewritten.equals(trimmed)) {
             faqResult = faqService.match(rewritten);
             if (faqResult != null) {

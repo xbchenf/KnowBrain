@@ -107,7 +107,7 @@ public class JwtUtil {
             Object expVal = jwt.getPayload("exp");
             claims.put("exp", expVal instanceof Number ? ((Number) expVal).longValue() : 0L);
             claims.put("jti", jwt.getPayload("jti"));
-            claims.put("type", jwt.getPayload("type"));  // "refresh" vs null（access token 不带 type）
+            claims.put("type", jwt.getPayload("type"));  // "access" | "refresh"
             return claims;
         } catch (Exception e) {
             return null;
@@ -125,6 +125,13 @@ public class JwtUtil {
             }
 
             JWT jwt = JWTUtil.parseToken(token);
+
+            // 拒绝 refresh token 用于 API 访问
+            Object typeObj = jwt.getPayload("type");
+            if ("refresh".equals(typeObj)) {
+                log.debug("JWT type=refresh，拒绝用于 API 访问");
+                return null;
+            }
 
             // 检查过期
             Object expObj = jwt.getPayload("exp");

@@ -95,12 +95,19 @@ public class QueryRewriteService {
         }
     }
 
+    /** 疑问句式关键词（包含任一即可触发 LLM 检查是否有优化空间） */
+    private static final Set<String> QUESTION_MARKERS = Set.of(
+            "怎么办", "怎么", "如何", "是什么", "什么是",
+            "能不能", "是否", "为什么", "哪个", "哪些"
+    );
+
     /**
      * 检测是否需要 LLM 改写。
      *
      * 条件（满足任一即触发）：
      * 1. 短查询：中文 ≤ 4 字
      * 2. 口语特征：包含非正式口语词
+     * 3. 疑问句式：包含疑问关键词（让 LLM 判断是否需要规范化）
      */
     boolean needsLlmRewrite(String query) {
         // 条件 1：短查询（中文 ≤ 4 个字符，排除纯英文短查询如"VPN"）
@@ -115,6 +122,13 @@ public class QueryRewriteService {
 
         // 条件 2：包含口语特征词
         for (String marker : COLLOQUIAL_MARKERS) {
+            if (stripped.contains(marker)) {
+                return true;
+            }
+        }
+
+        // 条件 3：疑问句式 — 让 LLM 检查是否需要规范化（Prompt 规则3保证规范查询原样返回）
+        for (String marker : QUESTION_MARKERS) {
             if (stripped.contains(marker)) {
                 return true;
             }

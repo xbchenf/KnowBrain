@@ -17,6 +17,7 @@ import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
+import io.micrometer.core.instrument.Timer;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
@@ -282,6 +283,17 @@ public class RAGServiceImpl implements RAGService {
             return new StreamContext(
                     Flux.just(pre.faqAnswer()),
                     List.of(faqSource), false, "high");
+        }
+
+        // 2.5 Agent 检索智能体分叉（FAQ 未命中时）
+        //      先尝试 Agent 多步检索，失败则降级到标准流式管线
+        if (agentEnabled) {
+            StreamContext agentResult = agentChatStream(question, spaceIds, history, category,
+                    pre, startMs, requestSample);
+            if (agentResult != null) {
+                return agentResult;
+            }
+            // Agent 失败 → 继续走标准流式管线（降级）
         }
 
         String processed = pre.rewrittenQuery();
@@ -607,6 +619,69 @@ public class RAGServiceImpl implements RAGService {
                 confidence, question);
 
         return response;
+    }
+
+    /**
+     * Agent 流式模式：LLM 多步检索（非流式 Function Calling）+ Flux 包装结果。
+     *
+     * <p>与 {@link #agentChat} 的区别：返回 {@link StreamContext} 而非 {@link ChatResponse}，
+     * 浏览器端仍能收到 SSE 事件（只是无打字动画——整个答案作为一个 token 推送）。
+     *
+     * <p>返回 null 表示 Agent 调用失败，调用方应降级到标准流式管线。
+     */
+    private StreamContext agentChatStream(String question, List<Long> spaceIds,
+                                          List<Map<String, String>> history,
+                                          String category, QueryPreprocessor.Result pre,
+                                          long startMs, Timer.Sample requestSample) {
+        // 1. 创建本次请求的检索工具
+        var searchTool = new SearchKnowledgeTool(
+                hybridSearchService, spaceIds, category);
+
+        // 2. 加载 Prompt
+        String systemPrompt = loadResource(agentPromptTemplate);
+        String userPrompt = buildAgentUserPrompt(question, history, pre.rewrittenQuery());
+
+        // 3. Agent 多步检索（非流式，含 Function Calling 工具循环）
+        String answer;
+        try {
+            answer = chatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
+                    .functions(FunctionCallback.builder()
+                            .function("searchKnowledge", searchTool)
+                            .inputType(SearchKnowledgeTool.Request.class)
+                            .build())
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            log.warn("Agent 流式调用失败，降级到标准流式管线: {}", e.getMessage());
+            return null; // 通知调用方降级
+        }
+
+        // 4. 汇总搜索结果 + 评估置信度
+        List<SearchResult> allSources = searchTool.getCachedResults();
+        String confidence = evaluateConfidence(allSources, answer);
+        List<SearchResult> effectiveSources = "low".equals(confidence) ? List.of() : allSources;
+
+        // 5. 兜底处理
+        boolean fallback = allSources.isEmpty() || answer == null || answer.isBlank();
+        String finalAnswer = (!fallback) ? answer
+                : "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。";
+
+        // 6. 记录指标和日志
+        metrics.recordSuccess();
+        requestSample.stop(metrics.requestTimer());
+        int total = (int) (System.currentTimeMillis() - startMs);
+        saveSearchLog(question, answer, allSources.size(), confidence,
+                false, spaceIds, category, total, collectSourceTitles(allSources));
+
+        log.debug("[AgentStream耗时] total={}ms searches={} results={} confidence={} fallback={} question=\"{}\"",
+                total, allSources.size(), allSources.size(), confidence, fallback, question);
+
+        // 7. 返回 StreamContext — 整个答案作为单个 Flux 元素
+        return new StreamContext(
+                Flux.just(finalAnswer),
+                effectiveSources, fallback, confidence);
     }
 
     /**

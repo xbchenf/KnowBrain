@@ -268,6 +268,8 @@ categories 用于：文档上传分类 + 检索范围限定
 |------|------|
 | [文档解析技术方案](docs/文档解析技术方案.md) | 文档解析入库链路设计：Qwen-VL(PDF主引擎)+POI(Office)+Tika(兜底) 三层架构、表格提取、结构感知分块、业界对标、MinerU/LibreOffice 未来增强评估 |
 | [企业 IM 集成技术方案](docs/企业IM集成技术方案.md) | 企微/钉钉/飞书 Bot 集成：双通道架构（HTTP回调+WebSocket Stream）、加解密、消息处理流水线、用户映射、部门映射、管理后台 |
+| [Agent 智能体技术方案](docs/Agent技术方案.md) | 业界对标分析（Dify/FastGPT/Glean/Copilot Studio/ServiceNow）+ 三阶段规划 + Phase 1 功能分析 |
+| [Agent Phase 1 技术方案](docs/Agent-Phase1-技术方案.md) | 详细实现设计：架构融合、SQL/DateTime 工具、四层安全、Prompt 增强、Spring AI Function Calling 集成 |
 | [商业化可行性分析报告](docs/KnowBrain-商业化可行性分析报告.md) | 市场分析、竞争格局、商业模式、能力缺口、财务测算 |
 | [产品战略规划](docs/KnowBrain-产品战略规划.md) | 产品定位、架构、路线图 |
 | [RAG 评测体系技术方案](docs/RAG评测体系技术方案.md) | 评测数据集管理 + LLM-as-Judge 自动评分（Faithfulness/Relevance/Context Recall）+ 历史趋势追踪 |

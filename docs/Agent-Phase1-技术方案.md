@@ -1,6 +1,25 @@
 # KnowBrain Agent Phase 1 — 检索智能体技术方案
 
-> 版本：V2.0 | 日期：2026-07-14 | 重写：从 SQL 工具方向转为多步检索方向
+> 版本：V2.1 | 日期：2026-07-14（设计）/ 2026-07-16（实现完成）| 状态：✅ 已交付
+
+---
+
+## 实现完成度
+
+| 模块 | 设计 | 实现 | 状态 |
+|------|:---:|:---:|:----:|
+| SearchKnowledgeTool | 方案第三节 | [SearchKnowledgeTool.java](../knowbrain-server/src/main/java/com/knowbrain/agent/SearchKnowledgeTool.java) | ✅ 完成 |
+| Agent System Prompt | 方案第四节 | [agent-system.txt](../knowbrain-server/src/main/resources/prompts/agent-system.txt) | ✅ 完成 |
+| RAGServiceImpl Agent 分叉 | 方案第七节 | [RAGServiceImpl.java](../knowbrain-server/src/main/java/com/knowbrain/retrieval/engine/RAGServiceImpl.java) `agentChat()` + `agentChatStream()` | ✅ 完成 |
+| 配置开关 | 方案第八节 | `rag.agent.enabled` (dev: true, prod: false) | ✅ 完成 |
+| 非流式 Agent | 方案第七节 | `chat()` → `agentChat()` | ✅ 完成 |
+| 流式 Agent (SSE) | 原标注"Phase 2" | `chatStream()` → `agentChatStream()` → `Flux.just(answer)` | ✅ 已提前交付 |
+| 评测回归 | 方案第九节 | 待跑完整评测数据集 | ⏳ 待执行 |
+| Agent 生产开关 | 方案第八节 | `RAG_AGENT_ENABLED=false` 默认关闭 | ✅ 已配置 |
+
+**与设计方案的差异**：
+1. **流式已支持**：原方案标注 Phase 2 的 `chatStream()` Agent 支持已提前实现。FFC 检索阶段非流式（Function Calling 需要完整往返），最终答案通过 `Flux.just()` 包装为 SSE 事件推送，浏览器端无打字动画但完整 SSE 事件结构（token→sources→done）保持不变。
+2. **SearchKnowledgeTool 缓存**：实际使用 `LinkedHashMap<Long, SearchResult>` 而非设计方案中的 `Set<Long>`，支持直接通过 `getCachedResults()` 获取完整 SearchResult 列表。
 
 ---
 
@@ -527,13 +546,28 @@ private List<SearchResult> collectSources(SearchKnowledgeTool tool) {
 }
 ```
 
-### 7.2 流式接口处理
+### 7.2 流式接口处理 ✅ 已实现
 
-`chatStream()` 暂不启用 Agent。Spring AI 1.0.0-M4 的流式 Function Calling 返回 `Flux<ChatResponse>`，与现有 SSE 模型兼容性待验证。Phase 2 再处理。
+`chatStream()` 已接入 Agent 路径，实现方案：
 
 ```java
-// chatStream() → 统一不走 Agent，保持现有行为
+// chatStream() 中的 Agent 分叉（FAQ 未命中时）
+if (agentEnabled) {
+    StreamContext agentResult = agentChatStream(question, spaceIds, history, category,
+            pre, startMs, requestSample);
+    if (agentResult != null) {
+        return agentResult;  // Agent 成功，返回包含 Flux.just(answer) 的 StreamContext
+    }
+    // Agent 失败 → 降级到标准流式管线
+}
 ```
+
+**设计权衡**：
+- **FFC 检索阶段**：非流式（Spring AI M4 Function Calling 工具循环需要完整往返）
+- **答案推送**：`Flux.just(answer)` 单元素包装，浏览器无打字动画但 SSE 事件结构完整
+- **降级策略**：Agent 异常 → `return null` → `chatStream()` 自动退回到标准流式管线
+
+> 原设计标注「Phase 2 再处理」，实际提前到 Phase 1 交付。
 
 ### 7.3 SearchKnowledgeTool 优化：缓存完整结果
 

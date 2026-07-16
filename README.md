@@ -91,7 +91,7 @@ graph LR
 |----|------|------|
 | 后端框架 | Java 17 + Spring Boot 3.3.x | 企业级标准 |
 | AI 编排 | Spring AI 1.0+ | 统一 LLM 调用抽象 |
-| LLM | Qwen-Max / DeepSeek-V3 | OpenAI 兼容协议，可替换 |
+| LLM | Qwen3.7-Plus（默认）/ DeepSeek-V3 | OpenAI 兼容协议，可替换 |
 | 向量数据库 | Milvus 2.4 | 语义检索（支持 BM25 分词器） |
 | 关系数据库 | MySQL 8.0 | 文档元数据、用户、权限、反馈 |
 | 缓存 | Redis 7 | 高频问答缓存、会话状态 |

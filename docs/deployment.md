@@ -160,7 +160,7 @@ docker compose up -d
 |------|------|--------|
 | `SPRING_AI_OPENAI_API_KEY` | **必填** LLM API Key | (空) |
 | `SPRING_AI_OPENAI_BASE_URL` | API 地址 | DashScope |
-| `SPRING_AI_OPENAI_CHAT_MODEL` | 对话模型 | qwen-max |
+| `SPRING_AI_OPENAI_CHAT_MODEL` | 对话模型 | qwen3.7-plus |
 | `SPRING_AI_OPENAI_EMBEDDING_MODEL` | 向量化模型 | text-embedding-v4 |
 
 支持的 LLM 服务商：

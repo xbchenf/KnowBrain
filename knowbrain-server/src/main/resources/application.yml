@@ -53,7 +53,7 @@ spring:
       api-key: ${SPRING_AI_OPENAI_API_KEY:}
       chat:
         options:
-          model: ${SPRING_AI_OPENAI_CHAT_MODEL:qwen-max}
+          model: ${SPRING_AI_OPENAI_CHAT_MODEL:qwen3.7-plus}
           temperature: 0.7
       embedding:
         options:

@@ -13,3 +13,8 @@ logging:
   level:
     com.knowbrain: DEBUG
     org.springframework.ai: DEBUG
+
+# Agent 检索智能体（开发环境默认开启）
+rag:
+  agent:
+    enabled: true

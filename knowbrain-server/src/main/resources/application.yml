@@ -131,6 +131,8 @@ evaluation:
 
 # RAG 问答配置
 rag:
+  agent:
+    enabled: ${RAG_AGENT_ENABLED:false}
   cache:
     enabled: ${RAG_CACHE_ENABLED:true}
     ttl-minutes: ${RAG_CACHE_TTL_MINUTES:60}

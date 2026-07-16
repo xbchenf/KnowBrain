@@ -146,6 +146,8 @@ services:
       MILVUS_PASSWORD: ${MILVUS_PASSWORD:-}
       MILVUS_RECREATE_ON_STARTUP: ${MILVUS_RECREATE_ON_STARTUP:-false}
       MILVUS_COLLECTION: ${MILVUS_COLLECTION:-knowbrain_knowledge_base}
+      # RAG Agent（默认关闭，生产环境渐进式上线）
+      RAG_AGENT_ENABLED: ${RAG_AGENT_ENABLED:-false}
       # Spring profile（生产环境）
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       # LLM

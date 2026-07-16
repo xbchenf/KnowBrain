@@ -1,5 +1,6 @@
 package com.knowbrain.retrieval.engine;
 
+import com.knowbrain.agent.SearchKnowledgeTool;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.common.RAGMetrics;
 import com.knowbrain.common.RequestContext;
@@ -8,7 +9,9 @@ import com.knowbrain.statistics.SearchLogMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.model.function.FunctionCallback;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.core.io.Resource;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
@@ -38,8 +41,13 @@ public class RAGServiceImpl implements RAGService {
     private final RequestContext requestContext;
     private final RAGMetrics metrics;
 
+    private final boolean agentEnabled;
+
     @Value("classpath:prompts/rag-system.txt")
     private Resource promptTemplate;
+
+    @Value("classpath:prompts/agent-system.txt")
+    private Resource agentPromptTemplate;
 
     @Value("${rag.confidence.high-threshold:0.8}")
     private double confidenceHighThreshold;
@@ -53,7 +61,8 @@ public class RAGServiceImpl implements RAGService {
                           RAGCacheService cacheService,
                           SearchLogMapper searchLogMapper,
                           RequestContext requestContext,
-                          RAGMetrics metrics) {
+                          RAGMetrics metrics,
+                          Environment environment) {
         this.hybridSearchService = hybridSearchService;
         this.chatClient = chatClientBuilder.build();
         this.preprocessor = preprocessor;
@@ -61,6 +70,8 @@ public class RAGServiceImpl implements RAGService {
         this.searchLogMapper = searchLogMapper;
         this.requestContext = requestContext;
         this.metrics = metrics;
+        this.agentEnabled = "true".equalsIgnoreCase(
+                environment.getProperty("rag.agent.enabled", "false"));
     }
 
     @Override
@@ -119,6 +130,12 @@ public class RAGServiceImpl implements RAGService {
             log.debug("[RAG耗时] preprocess={}ms total={}ms faq=hit question=\"{}\"",
                     tPreprocess - tCacheCheck, total, question);
             return response;
+        }
+
+        // 2.5. Agent 检索智能体分叉（FAQ 未命中时）
+        //       评测模式下跳过 Agent，强制走固定检索+LLM 流水线
+        if (agentEnabled && !skipFaq) {
+            return agentChat(question, spaceIds, history, category, pre);
         }
 
         String processed = pre.rewrittenQuery();
@@ -520,6 +537,173 @@ public class RAGServiceImpl implements RAGService {
         if (sources.size() >= 3 && maxScore > confidenceHighThreshold) return "high";
         if (sources.size() >= 2 && maxScore > confidenceLowThreshold) return "medium";
         return "low";
+    }
+
+    // ==================== Agent 检索智能体 ====================
+
+    /**
+     * Agent 模式：LLM 通过 searchKnowledge 工具自主多步检索。
+     *
+     * <p>异常时降级到标准 RAG 管线，确保可用性不降级。
+     */
+    private ChatResponse agentChat(String question, List<Long> spaceIds,
+                                   List<Map<String, String>> history,
+                                   String category, QueryPreprocessor.Result pre) {
+        long tStart = System.currentTimeMillis();
+
+        // 1. 创建本次请求的检索工具（携带 spaceIds / category 权限过滤）
+        var searchTool = new SearchKnowledgeTool(
+                hybridSearchService, spaceIds, category);
+
+        // 2. 加载 Prompt
+        String systemPrompt = loadResource(agentPromptTemplate);
+        String userPrompt = buildAgentUserPrompt(question, history, pre.rewrittenQuery());
+
+        // 3. 调用 LLM（带 Function Calling，Spring AI 自动处理 Tool Loop）
+        String answer;
+        try {
+            answer = chatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
+                    .functions(FunctionCallback.builder()
+                            .function("searchKnowledge", searchTool)
+                            .inputType(SearchKnowledgeTool.Request.class)
+                            .build())
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            log.warn("Agent 调用失败，降级到标准 RAG 管线: {}", e.getMessage());
+            return fallbackToStandardPipeline(question, spaceIds, history, category);
+        }
+
+        // 4. 汇总 Agent 多次搜索累积的文档
+        List<SearchResult> allSources = searchTool.getCachedResults();
+
+        // 5. 置信度评估
+        String confidence = evaluateConfidence(allSources, answer);
+
+        // 6. 构造溯源
+        List<ChatResponse.SourceInfo> sourceInfos;
+        if ("low".equals(confidence)) {
+            sourceInfos = List.of();
+        } else {
+            sourceInfos = allSources.stream()
+                    .map(s -> new ChatResponse.SourceInfo(
+                            s.getDocumentTitle(), s.getDocumentId(),
+                            s.getChunkIndex(), s.getContent()))
+                    .toList();
+        }
+
+        ChatResponse response = new ChatResponse(answer, sourceInfos,
+                allSources.isEmpty(), confidence);
+
+        // 7. 写入搜索日志
+        int total = (int) (System.currentTimeMillis() - tStart);
+        saveSearchLog(question, answer, allSources.size(), confidence,
+                false, spaceIds, category, total, collectSourceTitles(allSources));
+
+        log.debug("[Agent耗时] total={}ms searches={} results={} confidence={} question=\"{}\"",
+                total, searchTool.getCachedResults().size(), allSources.size(),
+                confidence, question);
+
+        return response;
+    }
+
+    /**
+     * Agent 异常时降级到标准 RAG 管线（一次检索 + LLM 生成）。
+     */
+    private ChatResponse fallbackToStandardPipeline(String question, List<Long> spaceIds,
+                                                    List<Map<String, String>> history,
+                                                    String category) {
+        long tStart = System.currentTimeMillis();
+
+        QueryPreprocessor.Result pre = preprocessor.preprocess(question);
+        if (pre.isFaqMatched()) {
+            var src = new ChatResponse.SourceInfo(
+                    "📋 知识库预设问答", null, null,
+                    pre.faqQuestion() + " — 该回答来自知识库预设的高频问答");
+            ChatResponse r = new ChatResponse(pre.faqAnswer(), List.of(src), false, "high");
+            int total = (int) (System.currentTimeMillis() - tStart);
+            saveSearchLog(question, pre.faqAnswer(), 1, "high", true, spaceIds, category, total, null);
+            return r;
+        }
+
+        String processed = pre.rewrittenQuery();
+        List<SearchResult> sources = hybridSearchService.search(
+                processed, adaptiveTopK(question), spaceIds, category);
+
+        if (sources.isEmpty()) {
+            ChatResponse r = new ChatResponse(
+                    "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。",
+                    Collections.emptyList(), true, "low");
+            saveSearchLog(question, r.getAnswer(), 0, "low", false, spaceIds, category,
+                    (int) (System.currentTimeMillis() - tStart), null);
+            return r;
+        }
+
+        StringBuilder context = new StringBuilder();
+        for (int i = 0; i < sources.size(); i++) {
+            SearchResult s = sources.get(i);
+            context.append("【参考资料").append(i + 1).append("】\n")
+                    .append(s.getContent()).append("\n\n");
+        }
+
+        String prompt = buildPrompt(context.toString(), question, history);
+        String answer;
+        try {
+            answer = chatClient.prompt().user(prompt)
+                    .stream().content()
+                    .collectList()
+                    .map(list -> String.join("", list))
+                    .block(Duration.ofSeconds(120));
+            if (answer == null || answer.isEmpty()) {
+                answer = buildFallbackAnswer(sources);
+            }
+        } catch (Exception e) {
+            log.error("降级管线 LLM 调用也失败了: {}", e.getMessage());
+            answer = buildFallbackAnswer(sources);
+        }
+
+        String confidence = evaluateConfidence(sources, answer);
+        List<ChatResponse.SourceInfo> sourceInfos = "low".equals(confidence) ? List.of()
+                : sources.stream()
+                    .map(s -> new ChatResponse.SourceInfo(
+                            s.getDocumentTitle(), s.getDocumentId(),
+                            s.getChunkIndex(), s.getContent()))
+                    .toList();
+
+        ChatResponse response = new ChatResponse(answer, sourceInfos,
+                sources.isEmpty(), confidence);
+        saveSearchLog(question, answer, sources.size(), confidence,
+                false, spaceIds, category, (int) (System.currentTimeMillis() - tStart),
+                collectSourceTitles(sources));
+        return response;
+    }
+
+    /** 从 classpath 加载文本资源 */
+    private String loadResource(Resource resource) {
+        try {
+            return new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.warn("资源加载失败: {}", resource.getDescription());
+            return "";
+        }
+    }
+
+    /** 拼接 Agent 模式的用户 Prompt */
+    private String buildAgentUserPrompt(String question, List<Map<String, String>> history,
+                                        String rewrittenQuery) {
+        StringBuilder sb = new StringBuilder();
+        String historyText = formatHistory(history);
+        if (!historyText.isEmpty()) {
+            sb.append(historyText).append("\n");
+        }
+        sb.append("用户问题：").append(question);
+        // 如果 QueryPreprocessor 改写了问题，附上改写版本帮助 LLM 理解
+        if (rewrittenQuery != null && !rewrittenQuery.equals(question)) {
+            sb.append("\n（问题改写：").append(rewrittenQuery).append("）");
+        }
+        return sb.toString();
     }
 
 }

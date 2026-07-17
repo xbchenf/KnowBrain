@@ -64,6 +64,9 @@ knowbrain-web/e2e/
 │   │   │   ├── users.spec.ts
 │   │   │   ├── scenario.spec.ts
 │   │   │   └── feedback.spec.ts
+│   │   ├── doc/
+│   │   │   ├── document.spec.ts
+│   │   │   └── parsing.spec.ts        # Priority C 文档解析链路
 │   │   ├── evaluation/
 │   │   │   └── eval.spec.ts
 │   │   ├── space/
@@ -79,8 +82,10 @@ knowbrain-web/e2e/
 │   ├── run-smoke.sh                     # Linux/Mac 一键冒烟
 │   ├── run-all.ps1                      # Windows 全量回归
 │   └── run-all.sh                       # Linux/Mac 全量回归
-└── .github/workflows/
-    └── e2e.yml                          # CI 流水线
+└── ../../.github/workflows/
+    ├── pr-e2e.yml                       # PR → smoke
+    ├── merge-e2e.yml                    # Merge → full + Pages
+    └── nightly-e2e.yml                  # Cron → full + notify
 ```
 
 ---
@@ -160,6 +165,15 @@ knowbrain-web/e2e/
 | R20 | Stats | 统计看板 — dailyTrend / topQuestions 数据准确 | `@regression` `@stats` |
 | R21 | Audit | 审计日志 — CRUD 操作后审计日志可查 | `@regression` `@audit` |
 
+**文档解析（Priority C 回归）**
+
+| # | 模块 | 用例 | Tag |
+|---|------|------|-----|
+| R22 | Parsing | 纯文本上传 → 解析成功 → parsedContent 非空 | `@regression` `@doc` `@parsing` |
+| R23 | Parsing | Markdown 含表格上传 → 解析后表格结构保留 | `@regression` `@doc` `@parsing` |
+| R24 | Parsing | 空文件上传 → 拒绝（400/422） | `@regression` `@doc` `@parsing` |
+| R25 | Parsing | 文档详情 → 解析元数据可追溯（fileName/fileSize） | `@regression` `@doc` `@parsing` |
+
 ### API 纯接口测试（~10 条）
 
 | # | 场景 | 说明 |
@@ -224,28 +238,75 @@ Schedule (nightly) → full suite + a11y + visual
 
 | 模块 | 后端单元测试 | E2E 测试 | 覆盖率 |
 |------|:---:|:---:|:---:|
-| Auth | ✅ | ❌ | 40% |
-| Document | ✅ | ❌ | 30% |
-| RAG | ✅ | ❌ | 25% |
-| Space | ❌ | ❌ | 0% |
-| Scenario | ✅ | ❌ | 20% |
-| Feedback | ❌ | ❌ | 0% |
-| Statistics | ❌ | ❌ | 0% |
-| Audit | ❌ | ❌ | 0% |
-| Evaluation | ❌ | ❌ | 0% |
+| Auth | ✅ | ✅ S1-S3, R2-R3, A1-A5 | 75% |
+| Document | ✅ | ✅ S7-S8, R4-R6, R22-R25, A9-A10 | 75% |
+| RAG | ✅ | ✅ S4-S6, R9-R12, A6-A8 | 75% |
+| Space | ❌ | ✅ S9, R7-R8 | 45% |
+| Scenario | ✅ | ✅ R16-R18 | 55% |
+| Feedback | ❌ | ✅ R19 | 30% |
+| Statistics | ❌ | ✅ R20 | 30% |
+| Audit | ❌ | ✅ R21 | 30% |
+| Evaluation | ❌ | ✅ R13-R15 | 50% |
 | IM | ✅ | ❌ | 25% |
-| Health | ❌ | ❌ | 0% |
+| Health | ❌ | ✅ S10 | 50% |
+
+> **更新于 2026-07-17**：Phase 2 完成（含 Priority C 文档解析），Smoke 11 条 + API 10 条 + Regression 25 条全部通过（总计 46 条）。
 
 ---
 
 ## 七、实施计划
 
-| 阶段 | 内容 | 预估工作量 |
-|------|------|:---:|
-| Phase 1 | 框架搭建 + smoke 10 条 + API 5 条 | 1-2 天 |
-| Phase 2 | regression 25 条（admin/eval/space） | 2-3 天 |
-| Phase 3 | CI 集成 + 报告美化 + 视觉回归 | 1 天 |
-| Phase 4 | 持续维护：新功能追测、脆弱用例修复 | 持续 |
+| 阶段 | 内容 | 预估工作量 | 状态 |
+|------|------|:---:|:---:|
+| Phase 1 | 框架搭建 + smoke 11 条 + API 10 条 | 1-2 天 | ✅ 已完成 (2026-07-17) |
+| Phase 2 | regression 25 条（admin/eval/space/scenario/feedback/audit/stats/doc-parsing） | 2-3 天 | ✅ 已完成 (2026-07-17) |
+| Phase 3 | CI 集成 + 报告美化 | 1 天 | ✅ 已完成 (2026-07-17) |
+| Phase 4 | 持续维护：新功能追测、脆弱用例修复 | 持续 | 🔄 持续 |
+
+### Phase 1 实施记录
+
+**已完成**（2026-07-17）：
+
+- **框架**：Playwright + TypeScript，三项目（chromium / api / setup），POM 架构
+- **认证复用**：`global.setup.ts` → API 登录 → `storageState` → 后续测试跳过 UI 登录
+- **Fixture 注入**：`chatPage` / `loginPage` / `adminPage` / `apiHelper` 自动注入
+- **选择器适配**：`.msg-row.assistant` / `.msg-ai-text` / `.send-btn` / `.chat-input`
+- **Smoke 11 条**：Auth(S1-S3) + Chat(S4-S6) + Document(S7-S8) + Space(S9) + Health(S10) — 耗时 ~1.1min
+- **API 10 条**：Auth(A1-A5) + RAG(A6-A8) + Document(A9-A10) — 耗时 ~8s
+- **触发方式**：PowerShell (`run-smoke.ps1`) / Bash (`run-smoke.sh`) 一键运行
+- **已知限制**：当前浏览器 UI 测试仅覆盖 Chat 页面；管理后台 CRUD 页面选择器更复杂，需逐页适配（Phase 2）
+
+### Phase 2 实施记录
+
+**已完成**（2026-07-17）：
+
+- **AdminPage POM 增强**：对话框表单填充(`fillDialogField`)、表格行操作(`clickRowAction`/`findTableRow`)、ElMessageBox 确认/取消、标签页切换(`switchTab`)、树节点操作、Toast 断言、筛选栏操作、统计卡片等待
+- **ApiHelper 扩展**：新增 25 个管理 API 方法（场景 CRUD、评测数据集/问题/运行、空间成员、反馈提交/统计、审计日志、统计、Token 刷新、用户管理）
+- **回归测试 21 条（7 个 spec 文件）**：
+  - `admin/users.spec.ts` — R1 用户 CRUD（浏览器 UI：新建→编辑→重置密码→验证列表）+ R2 自助注册 + R3 Token 刷新 rotation
+  - `doc/document.spec.ts` — R4 文档删除 + R5 分类过滤 + R6 格式校验（R4 需前置上传文档，当前 skip）
+  - `space/space.spec.ts` — R7 空间成员管理（添加→可见→删除）+ R8 权限校验（非成员访问拒绝）
+  - `rag/rag-enhanced.spec.ts` — R9 多轮对话 + R10 空间过滤检索 + R11 无结果兜底 + R12 Agent 降级
+  - `evaluation/eval.spec.ts` — R13 数据集 CRUD + R14 批量导入 + R15 评测运行
+  - `admin/scenario.spec.ts` — R16 分类树 CRUD + R17 术语 API 增删 + R18 FAQ 编辑验证
+  - `admin/feedback.spec.ts` — R19 反馈提交/统计面板 + R20 统计看板 + R21 审计日志筛选
+- **测试结果**：21 passed, 1 skipped (R4 无文档可删), 0 failed — 耗时 ~51s
+  - `doc/parsing.spec.ts` — R22-R25 文档解析链路（Priority C）：纯文本上传→解析内容验证 + Markdown 表格结构保留 + 空文件拒绝 + 元数据追溯
+- **模式**：API 种子数据 + 浏览器 UI 验证；API 纯接口测试；测试数据自动清理（`afterAll` 钩子）
+- **已知限制**：R4 需要提前上传文档才能运行；R17 术语删除用 API 避开 ElMessageBox 的 Playwright 交互限制
+
+### Phase 3 实施记录
+
+**已完成**（2026-07-17）— 设计文档：[E2E Phase 3 CI 设计](superpowers/specs/2026-07-17-e2e-phase3-ci-design.md)
+
+- **3 条 GitHub Actions Workflow**：
+  - `pr-e2e.yml` — PR 触发 smoke（11 条），~8min，报告 Artifact 保留 7 天
+  - `merge-e2e.yml` — Merge to main 触发全量（46 条），~12min，报告部署到 GitHub Pages
+  - `nightly-e2e.yml` — Cron 凌晨 3:00 UTC 全量，失败自动创建 GitHub Issue
+- **环境**：Docker Compose 自包含（MySQL + Redis + MinIO + Milvus + Server + Web + Nginx），每次 run `down -v` 销毁隔离
+- **报告**：Playwright 原生 HTML + JUnit XML（CI 摘要），PR 用 Artifact / Merge 用 GitHub Pages
+- **密钥**：LLM API Key 通过 GitHub Secret `DASHSCOPE_API_KEY` 注入，不硬编码
+- **Playwright 配置调整**：新增 JUnit reporter → `test-results/junit.xml`
 
 ---
 

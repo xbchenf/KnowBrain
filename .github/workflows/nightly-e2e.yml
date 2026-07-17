@@ -1,0 +1,151 @@
+name: E2E Full Suite (Nightly)
+
+on:
+  schedule:
+    # 每天北京时间 11:00 = UTC 03:00
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      COMPOSE_PROJECT_NAME: kb-nightly
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Java ----
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build server JAR
+        run: mvn package -DskipTests -q --no-transfer-progress
+        working-directory: knowbrain-server
+
+      # ---- Node.js ----
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: knowbrain-web/e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        run: npm ci
+        working-directory: knowbrain-web/e2e
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: knowbrain-web/e2e
+
+      # ---- Docker Compose ----
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start KnowBrain services
+        run: |
+          cat > .env << 'ENVEOF'
+          SPRING_AI_OPENAI_API_KEY=${{ secrets.DASHSCOPE_API_KEY }}
+          JWT_SECRET=ci-nightly-jwt-not-for-production
+          MYSQL_ROOT_PASSWORD=ci-nightly-mysql
+          REDIS_PASSWORD=ci-nightly-redis
+          MINIO_ACCESS_KEY=ci-nightly-minio
+          MINIO_SECRET_KEY=ci-nightly-minio-key
+          MILVUS_RECREATE_ON_STARTUP=true
+          ENVEOF
+          docker compose up -d --build
+
+      - name: Wait for server health
+        run: |
+          for i in $(seq 1 36); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/v1/health 2>/dev/null || echo '000')
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Server ready after ${i}0s"
+              exit 0
+            fi
+            echo "⏳ attempt $i/36 — HTTP $STATUS, waiting 10s..."
+            sleep 10
+          done
+          echo "❌ Server failed to start"
+          docker compose ps
+          docker compose logs --tail=60 server || true
+          exit 1
+
+      # ---- E2E: 全量 ----
+      - name: Run full E2E suite
+        id: e2e
+        run: npx playwright test
+        working-directory: knowbrain-web/e2e
+        env:
+          BASE_URL: http://localhost
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-nightly-report-${{ github.run_id }}
+          path: knowbrain-web/e2e/playwright-report/
+          retention-days: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-nightly-results-${{ github.run_id }}
+          path: knowbrain-web/e2e/test-results/
+          retention-days: 30
+
+      # ---- 清理 ----
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+      # ---- 失败通知 ----
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = context.runId;
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+            const date = new Date().toISOString().slice(0, 10);
+
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['e2e', 'nightly-failure'],
+              state: 'open',
+            });
+
+            // 避免重复创建（同一天已有未关闭 issue 则不再新建）
+            const todayLabel = `nightly-${date}`;
+            const existing = issues.data.find(i =>
+              i.labels.some(l => l.name === todayLabel)
+            );
+            if (existing) {
+              console.log(`Issue #${existing.number} already exists for ${date}, skipping.`);
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[E2E] Nightly 测试失败 — ${date}`,
+              body: [
+                `## Nightly E2E 测试失败`,
+                ``,
+                `- **日期**: ${date}`,
+                `- **运行**: [${runId}](${runUrl})`,
+                `- **分支**: ${context.ref}`,
+                ``,
+                `请查看 [Actions 日志](${runUrl}) 和 Artifact 报告了解详情。`,
+              ].join('\n'),
+              labels: ['e2e', 'nightly-failure', todayLabel],
+            });

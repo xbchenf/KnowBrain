@@ -1,0 +1,128 @@
+name: E2E Full Suite (Merge)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'knowbrain-server/**'
+      - 'knowbrain-web/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+jobs:
+  full-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      COMPOSE_PROJECT_NAME: kb-merge
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Java: Maven 构建 JAR ----
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build server JAR
+        run: mvn package -DskipTests -q --no-transfer-progress
+        working-directory: knowbrain-server
+
+      # ---- Node.js: E2E 依赖 ----
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: knowbrain-web/e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        run: npm ci
+        working-directory: knowbrain-web/e2e
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: knowbrain-web/e2e
+
+      # ---- Docker Compose ----
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start KnowBrain services
+        run: |
+          cat > .env << 'ENVEOF'
+          SPRING_AI_OPENAI_API_KEY=${{ secrets.DASHSCOPE_API_KEY }}
+          JWT_SECRET=ci-merge-jwt-not-for-production
+          MYSQL_ROOT_PASSWORD=ci-merge-mysql
+          REDIS_PASSWORD=ci-merge-redis
+          MINIO_ACCESS_KEY=ci-merge-minio
+          MINIO_SECRET_KEY=ci-merge-minio-key
+          MILVUS_RECREATE_ON_STARTUP=true
+          ENVEOF
+          docker compose up -d --build
+
+      - name: Wait for server health
+        run: |
+          for i in $(seq 1 36); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/v1/health 2>/dev/null || echo '000')
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Server ready after ${i}0s"
+              exit 0
+            fi
+            echo "⏳ attempt $i/36 — HTTP $STATUS, waiting 10s..."
+            sleep 10
+          done
+          echo "❌ Server failed to start"
+          docker compose ps
+          docker compose logs --tail=60 server || true
+          exit 1
+
+      # ---- E2E: 全量测试 ----
+      - name: Run full E2E suite
+        run: npx playwright test
+        working-directory: knowbrain-web/e2e
+        env:
+          BASE_URL: http://localhost
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-full-report-merge
+          path: knowbrain-web/e2e/playwright-report/
+          retention-days: 90
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-full-results-merge
+          path: knowbrain-web/e2e/test-results/
+          retention-days: 90
+
+      # ---- GitHub Pages 部署（最新报告） ----
+      - name: Setup Pages
+        if: always()
+        uses: actions/configure-pages@v4
+
+      - name: Upload to Pages
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: knowbrain-web/e2e/playwright-report/
+
+      - name: Deploy to GitHub Pages
+        if: always()
+        uses: actions/deploy-pages@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ---- 清理 ----
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans

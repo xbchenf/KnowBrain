@@ -10,7 +10,6 @@ on:
       - '.github/workflows/**'
   workflow_dispatch:
 
-# Pages 部署需要 id-token
 permissions:
   contents: read
   id-token: write
@@ -20,10 +19,6 @@ jobs:
   full-suite:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
 
     env:
       COMPOSE_PROJECT_NAME: kb-merge
@@ -59,7 +54,7 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: knowbrain-web/e2e
 
-      # ---- Docker Compose: 启动全栈 ----
+      # ---- Docker Compose ----
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -74,29 +69,39 @@ jobs:
           MINIO_SECRET_KEY=ci-merge-minio-key
           MILVUS_RECREATE_ON_STARTUP=true
           ENVEOF
-          docker compose up -d --build
+          docker compose up -d --build 2>&1
+          echo "=== container status ==="
+          docker compose ps
 
       - name: Wait for server health
         run: |
           echo "Waiting for KnowBrain server..."
-          for i in $(seq 1 36); do
+          for i in $(seq 1 48); do
             STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/v1/health 2>/dev/null || echo '000')
             if [ "$STATUS" = "200" ]; then
               echo "✅ Server ready (HTTP $STATUS) after ${i}0s"
               exit 0
             fi
-            echo "⏳ attempt $i/36 — HTTP $STATUS, waiting 10s..."
+            # 每 6 次（1 分钟）输出一次容器状态
+            if [ $((i % 6)) -eq 0 ]; then
+              echo "--- minute $((i/6)): container status ---"
+              docker compose ps --format 'table {{.Name}} {{.Status}}' 2>/dev/null || true
+            fi
+            echo "⏳ attempt $i/48 — HTTP $STATUS, waiting 10s..."
             sleep 10
           done
-          echo "❌ Server failed to start within 6 minutes"
-          echo "=== docker compose ps ==="
+          echo "❌ Server failed to start within 8 minutes"
+          echo "=== full ps ==="
           docker compose ps
-          echo "=== server logs (last 80 lines) ==="
-          docker compose logs --tail=80 server || true
+          echo "=== server logs ==="
+          docker compose logs --tail=100 server || true
+          echo "=== milvus logs ==="
+          docker compose logs --tail=30 milvus || true
           exit 1
 
       # ---- E2E: 全量测试 ----
       - name: Run full E2E suite
+        id: e2e
         run: npx playwright test
         working-directory: knowbrain-web/e2e
         env:
@@ -120,20 +125,30 @@ jobs:
           retention-days: 90
           if-no-files-found: ignore
 
-      # ---- GitHub Pages 部署 ----
+      # ---- GitHub Pages 部署（仅当报告存在时） ----
       - name: Setup Pages
-        if: always()
+        if: always() && steps.e2e.outcome != 'skipped'
         uses: actions/configure-pages@v4
 
+      - name: Check report exists
+        id: check-report
+        if: always() && steps.e2e.outcome != 'skipped'
+        run: |
+          if [ -f knowbrain-web/e2e/playwright-report/index.html ]; then
+            echo "has_report=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_report=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No report generated — skipping Pages deployment"
+          fi
+
       - name: Upload to Pages
-        if: always()
+        if: steps.check-report.outputs.has_report == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: knowbrain-web/e2e/playwright-report/
 
       - name: Deploy to GitHub Pages
-        id: deploy
-        if: always()
+        if: steps.check-report.outputs.has_report == 'true'
         uses: actions/deploy-pages@v4
 
       # ---- 清理 ----

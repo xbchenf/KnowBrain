@@ -134,8 +134,8 @@ public class RAGServiceImpl implements RAGService {
         }
 
         // 2.5. Agent 检索智能体分叉（FAQ 未命中时）
-        //       评测模式下跳过 Agent，强制走固定检索+LLM 流水线
-        if (agentEnabled && !skipFaq) {
+        //      评测时 FAQ 已在步骤 2 被 skipFaq 短路——Agent 是否启用独立由 rag.agent.enabled 控制
+        if (agentEnabled) {
             return agentChat(question, spaceIds, history, category, pre);
         }
 
@@ -571,6 +571,8 @@ public class RAGServiceImpl implements RAGService {
         String systemPrompt = loadResource(agentPromptTemplate);
         String userPrompt = buildAgentUserPrompt(question, history, pre.rewrittenQuery());
 
+        log.info("[Agent] 检索开始 question=\"{}\" rewritten=\"{}\"", question, pre.rewrittenQuery());
+
         // 3. 调用 LLM（带 Function Calling，Spring AI 自动处理 Tool Loop）
         String answer;
         try {
@@ -584,7 +586,7 @@ public class RAGServiceImpl implements RAGService {
                     .call()
                     .content();
         } catch (Exception e) {
-            log.warn("Agent 调用失败，降级到标准 RAG 管线: {}", e.getMessage());
+            log.warn("[Agent] 调用失败，降级到标准 RAG 管线: {}", e.getMessage());
             return fallbackToStandardPipeline(question, spaceIds, history, category);
         }
 
@@ -614,9 +616,8 @@ public class RAGServiceImpl implements RAGService {
         saveSearchLog(question, answer, allSources.size(), confidence,
                 false, spaceIds, category, total, collectSourceTitles(allSources));
 
-        log.debug("[Agent耗时] total={}ms searches={} results={} confidence={} question=\"{}\"",
-                total, searchTool.getCachedResults().size(), allSources.size(),
-                confidence, question);
+        log.info("[Agent] 检索完成 total={}ms searchCalls={} uniqueChunks={} confidence={} question=\"{}\"",
+                total, searchTool.getCallCount(), allSources.size(), confidence, question);
 
         return response;
     }
@@ -641,6 +642,8 @@ public class RAGServiceImpl implements RAGService {
         String systemPrompt = loadResource(agentPromptTemplate);
         String userPrompt = buildAgentUserPrompt(question, history, pre.rewrittenQuery());
 
+        log.info("[AgentStream] 检索开始 question=\"{}\" rewritten=\"{}\"", question, pre.rewrittenQuery());
+
         // 3. Agent 多步检索（非流式，含 Function Calling 工具循环）
         String answer;
         try {
@@ -654,7 +657,7 @@ public class RAGServiceImpl implements RAGService {
                     .call()
                     .content();
         } catch (Exception e) {
-            log.warn("Agent 流式调用失败，降级到标准流式管线: {}", e.getMessage());
+            log.warn("[AgentStream] 调用失败，降级到标准流式管线: {}", e.getMessage());
             return null; // 通知调用方降级
         }
 
@@ -675,8 +678,8 @@ public class RAGServiceImpl implements RAGService {
         saveSearchLog(question, answer, allSources.size(), confidence,
                 false, spaceIds, category, total, collectSourceTitles(allSources));
 
-        log.debug("[AgentStream耗时] total={}ms searches={} results={} confidence={} fallback={} question=\"{}\"",
-                total, allSources.size(), allSources.size(), confidence, fallback, question);
+        log.info("[AgentStream] 检索完成 total={}ms searchCalls={} uniqueChunks={} confidence={} fallback={} question=\"{}\"",
+                total, searchTool.getCallCount(), allSources.size(), confidence, fallback, question);
 
         // 7. 返回 StreamContext — 整个答案作为单个 Flux 元素
         return new StreamContext(

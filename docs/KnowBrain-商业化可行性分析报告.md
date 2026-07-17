@@ -202,7 +202,8 @@ Java 生态天然对接企业现有基础设施——MySQL 主备、Redis 集群
 | 多模态（图片理解） | ❌ 缺失 | ⭐ | 各竞品不同程度支持 |
 | LDAP/SSO 集成 | ❌ 缺失 | ⭐ | 200+ 人企业刚需 |
 | 评测体系（Faithfulness/Relevance/Context Recall） | ✅ 已实现 | ⭐⭐⭐ | LLM-as-Judge 三项指标 + 基线/对抗测试 + 历史趋势 |
-| **综合** | | **⭐⭐⭐** | **MVP 可用，商用需补齐 3 项** |
+| E2E 自动化测试 | ✅ Phase 1 完成 | ⭐⭐⭐ | Playwright + TypeScript，Smoke 11 条 + API 10 条，POM 架构，一键触发 |
+| **综合** | | **⭐⭐⭐** | **MVP 可用，商用需补齐 2 项** |
 
 ### 4.2 与 Dify 的功能差距热力图
 

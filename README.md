@@ -82,6 +82,7 @@ graph LR
 - **IM 管理后台** — 平台部门映射 + 跨平台身份关联，可视化绑定/解绑
 - **系统监控** — Prometheus + Grafana（可选），JVM 指标 + RAG 性能看板
 - **评测体系** — 数据集管理 + LLM-as-Judge 自动评分（Faithfulness/Relevance/Context Recall）+ 基线/对抗测试 + 历史趋势
+- **E2E 测试** — Playwright + TypeScript 全模块覆盖，Smoke（11 条，< 2min）+ Regression（21 条，~50s）+ API（10 条，< 10s），认证状态复用，一键脚本触发
 
 ---
 

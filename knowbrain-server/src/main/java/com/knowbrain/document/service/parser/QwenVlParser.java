@@ -3,6 +3,7 @@ package com.knowbrain.document.service.parser;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.document.service.PdfImageRenderer;
 import com.knowbrain.document.service.QwenVisionService;
+import com.knowbrain.document.service.table.TableToMarkdown;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -94,9 +95,11 @@ public class QwenVlParser implements DocumentParser {
 
             // Qwen-VL 置信度：高质量视觉模型，但复杂排版可能有偏差
             double confidence = fullMarkdown.isEmpty() ? 0.0 : 0.95;
+            List<String> tables = TableToMarkdown.extractTables(fullMarkdown);
 
             return new ParsedDocument(
                     fullMarkdown,
+                    tables,
                     pageImages.size(),
                     ParseMetadata.of("qwen-vl", elapsed, confidence)
             );

@@ -8,6 +8,8 @@ import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xslf.usermodel.*;
 import org.apache.poi.xwpf.usermodel.*;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTVMerge;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge;
 import org.springframework.stereotype.Component;
 
 import java.awt.geom.Rectangle2D;
@@ -147,19 +149,121 @@ public class PoiParser implements DocumentParser {
                 .anyMatch(run -> run.isBold() && run.getText(0) != null && !run.getText(0).isBlank());
     }
 
-    /** docx 表格 → 二维网格 → Markdown */
+    /**
+     * docx 表格 → 二维网格 → Markdown
+     *
+     * <p>处理 Word 表格中的合并单元格：
+     * <ul>
+     *   <li><b>gridSpan</b>（水平合并）：将单元格展开为多列，首列填文本，其余填空字符串</li>
+     *   <li><b>vMerge</b>（垂直合并）：RESTART 记录文本 → CONTINUE 复用首行文本</li>
+     * </ul>
+     *
+     * <p>算法：先计算全局最大列数，再逐行归一化（span 展开 + vMerge 回填），
+     * 最终输出每个单元格等宽的二维网格给 {@link TableToMarkdown#convert}。
+     */
     private String convertDocxTable(XWPFTable table) {
-        List<List<String>> grid = new ArrayList<>();
-        for (XWPFTableRow row : table.getRows()) {
-            List<String> rowCells = new ArrayList<>();
+        List<XWPFTableRow> rows = table.getRows();
+        if (rows.isEmpty()) return "";
+
+        // Step 1: 计算全局最大列数（含 gridSpan 展开）
+        int maxCols = 0;
+        for (XWPFTableRow row : rows) {
+            int cols = 0;
             for (XWPFTableCell cell : row.getTableCells()) {
-                rowCells.add(cell.getText().trim());
+                cols += getGridSpan(cell);
             }
-            if (!rowCells.isEmpty()) {
-                grid.add(rowCells);
-            }
+            maxCols = Math.max(maxCols, cols);
         }
+
+        // Step 2: 按虚拟列号对齐生成归一化网格
+        List<List<String>> grid = new ArrayList<>();
+        Map<Integer, String> vMergeRestart = new LinkedHashMap<>(); // virtualCol → restartText
+
+        for (XWPFTableRow row : rows) {
+            List<String> rowCells = new ArrayList<>();
+            int virtualCol = 0;
+
+            for (XWPFTableCell cell : row.getTableCells()) {
+                int gridSpan = getGridSpan(cell);
+                String cellText = cell.getText().trim();
+                CTVMerge vMerge = getVMerge(cell);
+
+                if (isVMergeRestart(vMerge)) {
+                    // 垂直合并起始：记录文本供后续 CONTINUE 复用
+                    vMergeRestart.put(virtualCol, cellText);
+                } else if (isVMergeContinue(vMerge)) {
+                    // 垂直合并继续：复用首行记录的文本
+                    String restartText = vMergeRestart.get(virtualCol);
+                    if (restartText != null) {
+                        cellText = restartText;
+                    }
+                } else {
+                    // 非合并单元格：清除此列之前的 vMerge 状态
+                    vMergeRestart.remove(virtualCol);
+                }
+
+                // 水平合并展开：首列填文本，其余列填空占位
+                for (int s = 0; s < gridSpan; s++) {
+                    rowCells.add(s == 0 ? cellText : "");
+                }
+
+                virtualCol += gridSpan;
+            }
+
+            // 补齐右侧空列
+            while (rowCells.size() < maxCols) {
+                rowCells.add("");
+            }
+
+            // 当前行未覆盖的列 → vMerge 自然结束
+            int lastCol = virtualCol;
+            vMergeRestart.keySet().removeIf(col -> col >= lastCol);
+
+            grid.add(rowCells);
+        }
+
         return TableToMarkdown.convert(grid);
+    }
+
+    /** 读取单元格 gridSpan（水平合并列数），异常或无值时返回 1 */
+    private int getGridSpan(XWPFTableCell cell) {
+        try {
+            if (cell.getCTTc() != null && cell.getCTTc().getTcPr() != null) {
+                var gs = cell.getCTTc().getTcPr().getGridSpan();
+                if (gs != null && gs.getVal() != null) {
+                    int span = gs.getVal().intValue();
+                    if (span > 0) return span;
+                }
+            }
+        } catch (Exception ignored) {
+            // 无 gridSpan → 默认 1
+        }
+        return 1;
+    }
+
+    /** 读取单元格 vMerge 属性，异常或无值时返回 null */
+    private CTVMerge getVMerge(XWPFTableCell cell) {
+        try {
+            if (cell.getCTTc() != null && cell.getCTTc().getTcPr() != null) {
+                return cell.getCTTc().getTcPr().getVMerge();
+            }
+        } catch (Exception ignored) {
+            // 无 vMerge
+        }
+        return null;
+    }
+
+    /** vMerge 值为 RESTART → 垂直合并起始单元格 */
+    private boolean isVMergeRestart(CTVMerge vMerge) {
+        if (vMerge == null) return false;
+        return vMerge.getVal() != null && vMerge.getVal() == STMerge.RESTART;
+    }
+
+    /** vMerge 无 val 或 val=CONTINUE → 垂直合并继续单元格（复用首行文本） */
+    private boolean isVMergeContinue(CTVMerge vMerge) {
+        if (vMerge == null) return false;
+        // vMerge 元素存在但 val 为 null → Office 默认视为 CONTINUE
+        return vMerge.getVal() == null || vMerge.getVal() == STMerge.CONTINUE;
     }
 
     // ==================== xlsx ====================

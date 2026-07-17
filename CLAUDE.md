@@ -54,6 +54,7 @@
 | 文档解析 | Qwen-VL + POI + Tika 三层架构 | PDF 视觉解析 + Office 原生解析 + 通用格式兜底 |
 | 熔断降级 | Resilience4j | LLM/Milvus 故障隔离，防止级联失败 |
 | 前端 | Vue 3 + Element Plus | 统一前端（Q&A 问答 + 管理后台） |
+| E2E 测试 | Playwright + TypeScript | 浏览器 UI + API 混合测试，POM 架构，storageState 复用 |
 | 监控 | Prometheus + Grafana | JVM 指标 / RAG 性能看板（可选，profile 启用） |
 | 部署 | Docker Compose | 一键部署 |
 
@@ -134,6 +135,15 @@ knowbrain-web/
 │       ├── DocBrowseView.vue # 文档浏览
 │       ├── DashboardView.vue # 管理仪表盘
 │       └── ...              # 其他管理页面
+├── e2e/                     # Playwright E2E 自动化测试
+│   ├── tests/smoke/         # 冒烟测试（11 条）
+│   ├── tests/api/           # API 接口测试（10 条）
+│   ├── tests/regression/    # 回归测试（Phase 2）
+│   ├── pages/               # Page Object Model
+│   ├── fixtures/            # 自定义夹具
+│   ├── helpers/             # API 辅助层
+│   ├── scripts/             # 一键运行脚本（ps1/sh）
+│   └── playwright.config.ts
 ├── Dockerfile
 └── nginx.conf
 
@@ -189,6 +199,7 @@ docker/
 | 🔄 **LLM 查询改写** | 短查询自动扩展、口语规范化，提升检索命中率 |
 | 🗄️ **数据库迁移** | Flyway 版本化 SQL，启动时自动增量升级 |
 | ⚡ **熔断降级** | Resilience4j 熔断器（LLM/Milvus 故障隔离），LLM 超时→降级返回检索原文 |
+| 🧪 **E2E 自动化测试** | Playwright + TypeScript，Smoke 11 条 + API 10 条，POM 架构，storageState 复用，一键脚本触发 |
 
 ---
 
@@ -276,7 +287,7 @@ categories 用于：文档上传分类 + 检索范围限定
 4. **LLM 是增强不是替代**：LLM 超时/失败 → 降级返回检索结果原文
 5. **高频问题缓存**：Redis 缓存热门问答，避免重复调 LLM
 6. **反馈闭环**：用户标记「无用」→ 记录 → 统计 → 驱动知识库改进
-7. **Agent 渐进式上线**：默认关闭（`RAG_AGENT_ENABLED=false`），通过 Feature Flag 控制，异常时自动降级到标准管线
+7. **Agent 渐进式上线**：默认关闭（`RAG_AGENT_ENABLED=false`），通过 Feature Flag 控制，异常时自动降级到标准管线。A/B 评测结论：Faithfulness +13%（IT 回归），但 Context Recall -13~38%（精度-召回权衡）。**适用场景**：合规/法律/医疗（Faithfulness 优先）；**不适用**：通用问答（Recall/Relevance 优先）。重新评估条件：Recall 差距 < 10% 或用户需求 > 50%。
 8. **Agent 单工具原则**：Phase 1 只暴露一个 `searchKnowledge` 工具，让 LLM 专注检索策略而非工具选择
 
 ---

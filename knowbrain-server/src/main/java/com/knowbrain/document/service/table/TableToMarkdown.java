@@ -2,6 +2,8 @@ package com.knowbrain.document.service.table;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -136,6 +138,65 @@ public class TableToMarkdown {
             len += (ch <= 0x7F) ? 1 : 2;
         }
         return len;
+    }
+
+    /**
+     * 从 Markdown 文本中提取所有表格块
+     *
+     * <p>识别连续的 {@code | ... |} 行（含表头分隔线），每段作为一个独立表格字符串。
+     * 用于 Qwen-VL 等视觉模型输出的后处理：模型已将页面转为 Markdown，
+     * 但未单独列出表格列表，此方法补全表格元数据。
+     *
+     * @param markdown 完整的 Markdown 文本
+     * @return 独立表格块列表，每项为一个完整的 GFM 表格字符串
+     */
+    public static List<String> extractTables(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return List.of();
+        }
+
+        // 匹配 Markdown 表格行：| ... |（允许首尾空白）
+        Pattern tableRow = Pattern.compile("^\\s*\\|.+\\|\\s*$");
+
+        List<String> tables = new ArrayList<>();
+        String[] lines = markdown.split("\\R");
+
+        int i = 0;
+        while (i < lines.length) {
+            // 寻找表格起始行（非分隔线的 |...| 行，且下一行是分隔线）
+            if (tableRow.matcher(lines[i]).matches() && !isSeparatorLine(lines[i])) {
+                // 检查下一行是否为分隔线
+                if (i + 1 < lines.length && isSeparatorLine(lines[i + 1])) {
+                    int start = i;
+                    i += 2; // 跳过表头 + 分隔线
+
+                    // 收集后续数据行
+                    while (i < lines.length && tableRow.matcher(lines[i]).matches()) {
+                        i++;
+                    }
+
+                    // 提取表格块
+                    StringBuilder tableBlock = new StringBuilder();
+                    for (int j = start; j < i; j++) {
+                        if (j > start) tableBlock.append("\n");
+                        tableBlock.append(lines[j].trim());
+                    }
+                    String table = tableBlock.toString().trim();
+                    if (!table.isEmpty()) {
+                        tables.add(table);
+                    }
+                    continue;
+                }
+            }
+            i++;
+        }
+
+        return tables;
+    }
+
+    /** 检查是否为 Markdown 表格分隔线（如 |---|:---:|---|） */
+    private static boolean isSeparatorLine(String line) {
+        return line.matches("^\\s*\\|[\\s:-]+\\|\\s*$") && line.contains("-");
     }
 
     /** 右侧填充空格至指定显示宽度 */

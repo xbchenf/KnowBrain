@@ -1,6 +1,6 @@
 # KnowBrain Agent Phase 1 — 检索智能体技术方案
 
-> 版本：V2.1 | 日期：2026-07-14（设计）/ 2026-07-16（实现完成）| 状态：✅ 已交付
+> 版本：V2.2 | 日期：2026-07-14（设计）/ 2026-07-17（A/B 评测完成）| 状态：✅ 已交付 + 已评测
 
 ---
 
@@ -14,12 +14,13 @@
 | 配置开关 | 方案第八节 | `rag.agent.enabled` (dev: true, prod: false) | ✅ 完成 |
 | 非流式 Agent | 方案第七节 | `chat()` → `agentChat()` | ✅ 完成 |
 | 流式 Agent (SSE) | 原标注"Phase 2" | `chatStream()` → `agentChatStream()` → `Flux.just(answer)` | ✅ 已提前交付 |
-| 评测回归 | 方案第九节 | 待跑完整评测数据集 | ⏳ 待执行 |
+| 评测回归 | 方案第九节 | A/B 评测完成（65 题，IT/HR 回归+对抗），Faithfulness +13% (IT)，Context Recall -13~38% | ✅ 已完成 |
 | Agent 生产开关 | 方案第八节 | `RAG_AGENT_ENABLED=false` 默认关闭 | ✅ 已配置 |
 
 **与设计方案的差异**：
 1. **流式已支持**：原方案标注 Phase 2 的 `chatStream()` Agent 支持已提前实现。FFC 检索阶段非流式（Function Calling 需要完整往返），最终答案通过 `Flux.just()` 包装为 SSE 事件推送，浏览器端无打字动画但完整 SSE 事件结构（token→sources→done）保持不变。
-2. **SearchKnowledgeTool 缓存**：实际使用 `LinkedHashMap<Long, SearchResult>` 而非设计方案中的 `Set<Long>`，支持直接通过 `getCachedResults()` 获取完整 SearchResult 列表。
+2. **SearchKnowledgeTool 去重**：初版按 `documentId` 去重导致同文档不同 chunk 丢失（Context Recall 偏低），2026-07-17 修复为 `documentId + chunkIndex` 复合 key，去重 bug 不影响 Agent 检索质量。实际使用 `List<SearchResult> + Set<String> seenKeys` 结构。
+3. **A/B 评测结论**（2026-07-17）：Agent 默认关闭是正确决策。Faithfulness 提升显著（IT 回归 +13%），但 Context Recall 全面下降（-13~38%）。Agent 适用于合规/法律等高 Faithfulness 场景。详见原则 #7。
 
 ---
 

@@ -2,6 +2,7 @@ package com.knowbrain.document.service.parser;
 
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
 import com.knowbrain.document.service.QwenVisionService;
+import com.knowbrain.document.service.table.TableToMarkdown;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.xslf.usermodel.XMLSlideShow;
 import org.apache.poi.xslf.usermodel.XSLFSlide;
@@ -97,9 +98,11 @@ public class QwenVlPptxParser implements DocumentParser {
                     slides.size(), fullMarkdown.length(), elapsed);
 
             double confidence = fullMarkdown.isEmpty() ? 0.0 : 0.95;
+            List<String> tables = TableToMarkdown.extractTables(fullMarkdown);
 
             return new ParsedDocument(
                     fullMarkdown,
+                    tables,
                     slides.size(),
                     ParseMetadata.of("qwen-vl-ppt", elapsed, confidence)
             );

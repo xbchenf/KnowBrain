@@ -42,8 +42,12 @@ public class SearchKnowledgeTool implements
     private final List<Long> spaceIds;
     private final String category;
 
-    /** 跨多次调用的累计结果（去重），供最终组装 ChatResponse.sources */
-    private final Map<Long, SearchResult> resultCache = new LinkedHashMap<>();
+    /** 跨多次调用的累计结果（按 documentId + chunkIndex 复合去重），供最终组装 ChatResponse.sources */
+    private final List<SearchResult> cachedResults = new ArrayList<>();
+    private final Set<String> seenKeys = new HashSet<>();
+
+    /** 记录 Agent 总共调用了多少次 searchKnowledge */
+    private int callCount = 0;
 
     public SearchKnowledgeTool(HybridSearchService searchService,
                                List<Long> spaceIds, String category) {
@@ -56,6 +60,7 @@ public class SearchKnowledgeTool implements
 
     @Override
     public Response apply(Request request) {
+        callCount++;
         List<SearchResult> hits = searchService.search(
                 request.query(),
                 adaptiveTopK(request.query()),
@@ -68,9 +73,10 @@ public class SearchKnowledgeTool implements
                     sr.getDocumentTitle() != null ? sr.getDocumentTitle() : "",
                     truncate(sr.getContent(), 600),
                     sr.getScore() != null ? sr.getScore() : 0.0));
-            // 累计去重（documentId 为 null 时用 hashCode 兜底）
-            if (sr.getDocumentId() != null) {
-                resultCache.putIfAbsent(sr.getDocumentId(), sr);
+            // 按 documentId + chunkIndex 复合去重（同一文档不同 chunk 都保留）
+            String dedupKey = buildDedupKey(sr);
+            if (dedupKey != null && seenKeys.add(dedupKey)) {
+                cachedResults.add(sr);
             }
         }
 
@@ -79,9 +85,14 @@ public class SearchKnowledgeTool implements
 
     // ==================== 公开方法 ====================
 
-    /** 返回本次 Agent 会话中所有搜索到的文档（去重，保持首次出现顺序） */
+    /** 返回本次 Agent 会话中所有搜索到的文档（按 documentId+chunkIndex 复合去重，保持首次出现顺序） */
     public List<SearchResult> getCachedResults() {
-        return new ArrayList<>(resultCache.values());
+        return new ArrayList<>(cachedResults);
+    }
+
+    /** Agent 总共调用了多少次 searchKnowledge */
+    public int getCallCount() {
+        return callCount;
     }
 
     // ==================== 内部方法 ====================
@@ -95,5 +106,11 @@ public class SearchKnowledgeTool implements
     private String truncate(String text, int maxChars) {
         if (text == null) return "";
         return text.length() <= maxChars ? text : text.substring(0, maxChars) + "…";
+    }
+
+    /** 构建复合去重 key：documentId + chunkIndex，避免同一文档不同 chunk 被误去重 */
+    private String buildDedupKey(SearchResult sr) {
+        if (sr.getDocumentId() == null) return null;
+        return sr.getDocumentId() + "_" + (sr.getChunkIndex() != null ? sr.getChunkIndex() : -1);
     }
 }

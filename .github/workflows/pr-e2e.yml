@@ -29,7 +29,7 @@ jobs:
           cache: maven
 
       - name: Build server JAR
-        run: mvn package -DskipTests -q --no-transfer-progress
+        run: mvn package -Dmaven.test.skip=true -q --no-transfer-progress
         working-directory: knowbrain-server
 
       # ---- Node.js: E2E 依赖 ----

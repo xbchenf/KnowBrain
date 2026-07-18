@@ -11,6 +11,13 @@ const router = createRouter({
       meta: { guest: true }
     },
 
+    // ==================== OIDC 回调页 ====================
+    {
+      path: '/login/callback',
+      name: 'login-callback',
+      component: () => import('../views/LoginCallbackView.vue')
+    },
+
     // ==================== Q&A 问答界面（WebLayout 侧边栏） ====================
     {
       path: '/',

@@ -74,6 +74,39 @@ spring:
         embedding-dimension: 1024
         initialize-schema: false
 
+  # ============================================================
+  # Spring Security OAuth2 Client — 企业 SSO 登录
+  #
+  # 如需启用 SSO，请在 .env 或环境变量中设置以下至少一组配置，
+  # 然后在 spring.security.oauth2.client.registration 下添加对应注册：
+  #
+  #   飞书：
+  #     FEISHU_APP_ID=cli_xxx
+  #     FEISHU_APP_SECRET=xxx
+  #     注册：feishu client-name=飞书 scope=openid,profile
+  #     Provider URI:
+  #       authorization: https://open.feishu.cn/open-apis/authen/v1/authorize
+  #       token: https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
+  #       user-info: https://open.feishu.cn/open-apis/authen/v1/user_info
+  #
+  #   钉钉：
+  #     DINGTALK_APP_ID=dingxxx
+  #     DINGTALK_APP_SECRET=xxx
+  #     注册：dingtalk client-name=钉钉 scope=openid
+  #     Provider URI:
+  #       authorization: https://login.dingtalk.com/oauth2/auth
+  #       token: https://api.dingtalk.com/v1.0/oauth2/userAccessToken
+  #       user-info: https://api.dingtalk.com/v1.0/contact/users/me
+  #
+  #   通用 OIDC（Azure AD / Okta / Keycloak）：
+  #     OIDC_CLIENT_ID=xxx
+  #     OIDC_CLIENT_SECRET=xxx
+  #     OIDC_ISSUER_URI=https://login.microsoftonline.com/{tenant}/v2.0
+  #     注册：oidc client-name=企业账号 scope=openid,profile,email
+  #
+  # 未配置任何注册时，登录页只显示用户名密码登录，不影响系统运行。
+  # ============================================================
+
 # Milvus 混合检索配置
 milvus:
   hybrid:
@@ -99,6 +132,10 @@ jwt:
   secret: ${JWT_SECRET:change-me-in-production}
   expire-hours: ${JWT_EXPIRE_HOURS:24}
   refresh-expire-hours: ${JWT_REFRESH_EXPIRE_HOURS:168}
+
+# 应用配置
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost}
 
 # 敏感词过滤
 security:

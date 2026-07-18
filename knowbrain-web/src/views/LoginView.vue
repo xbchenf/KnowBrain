@@ -35,28 +35,51 @@
           </el-button>
         </el-form-item>
       </el-form>
+
+      <!-- OIDC 企业登录 -->
+      <div v-if="providers.length > 0" class="oidc-section">
+        <div class="oidc-divider">
+          <span class="oidc-divider-text">其他登录方式</span>
+        </div>
+        <div class="oidc-providers">
+          <el-button v-for="p in providers" :key="p.id"
+                     class="oidc-btn" @click="oidcLogin(p.url)">
+            {{ p.name }}
+          </el-button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
-import { login, register } from '../api'
+import { login, register, getOidcProviders } from '../api'
 
 const router = useRouter()
 const UserIcon = User
 const LockIcon = Lock
 const mode = ref('login')
 const loading = ref(false)
+const providers = ref<Array<{id: string, name: string, url: string}>>([])
 
 const form = reactive({ username: '', password: '', name: '' })
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, min: 6, message: '密码至少6位', trigger: 'blur' }]
 }
+
+onMounted(async () => {
+  try {
+    const res = await getOidcProviders()
+    providers.value = res.data?.data || res.data || []
+  } catch {
+    // 获取 OIDC 提供商失败，忽略（可能是后端未启用）
+  }
+})
 
 async function submit() {
   loading.value = true
@@ -85,6 +108,10 @@ async function submit() {
   } finally {
     loading.value = false
   }
+}
+
+function oidcLogin(url: string) {
+  window.location.href = url
 }
 </script>
 
@@ -127,5 +154,25 @@ async function submit() {
 .submit-btn {
   width: 100%; height: 44px; font-size: 15px; font-weight: 600;
   border-radius: 8px; letter-spacing: 2px;
+}
+
+/* OIDC 企业登录 */
+.oidc-section { margin-top: 20px; }
+.oidc-divider {
+  display: flex; align-items: center;
+  margin-bottom: 12px;
+}
+.oidc-divider::before, .oidc-divider::after {
+  content: ''; flex: 1;
+  border-top: 1px solid #e4e7ed;
+}
+.oidc-divider-text {
+  padding: 0 12px; font-size: 12px; color: #b0b3bb;
+}
+.oidc-providers {
+  display: flex; justify-content: center; gap: 12px;
+}
+.oidc-btn {
+  border-radius: 8px; min-width: 100px;
 }
 </style>

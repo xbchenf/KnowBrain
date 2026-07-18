@@ -11,8 +11,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.boot.autoconfigure.security.oauth2.client.OAuth2ClientProperties;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,6 +35,8 @@ public class AuthController {
     private final TokenBlacklistService blacklistService;
     private final RAGMetrics metrics;
     private final StringRedisTemplate stringRedisTemplate;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private OAuth2ClientProperties oauth2ClientProperties;
 
     @Operation(summary = "登录", description = "用户名密码登录，返回 JWT Token")
     @PostMapping("/login")
@@ -217,6 +223,26 @@ public class AuthController {
                 "name", user.getName(),
                 "role", user.getRole()
         ));
+    }
+
+    @Operation(summary = "OIDC 提供商列表", description = "返回已启用的 OAuth2/OIDC 登录入口，供前端动态渲染登录按钮")
+    @GetMapping("/oidc-providers")
+    public Result<List<Map<String, String>>> getOidcProviders() {
+        List<Map<String, String>> providers = new ArrayList<>();
+        if (oauth2ClientProperties == null) {
+            return Result.ok(providers);
+        }
+        oauth2ClientProperties.getRegistration().forEach((id, reg) -> {
+            // 仅返回已配置 client-id 的 provider
+            if (reg.getClientId() != null && !reg.getClientId().isBlank()) {
+                Map<String, String> item = new LinkedHashMap<>();
+                item.put("id", id);
+                item.put("name", reg.getClientName() != null ? reg.getClientName() : id);
+                item.put("url", "/oauth2/authorization/" + id);
+                providers.add(item);
+            }
+        });
+        return Result.ok(providers);
     }
 
     /** 将单个 token 加入黑名单 */

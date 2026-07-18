@@ -19,16 +19,14 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CircleCloseFilled, Loading } from '@element-plus/icons-vue'
+import { oidcExchange } from '../api'
 
 const route = useRoute()
 const router = useRouter()
 const error = ref('')
 
-onMounted(() => {
-  const token = route.query.token as string
-  const refreshToken = route.query.refreshToken as string
-  const name = route.query.name as string
-  const role = route.query.role as string
+onMounted(async () => {
+  const code = route.query.code as string
   const errMsg = route.query.error as string
 
   if (errMsg) {
@@ -36,23 +34,44 @@ onMounted(() => {
     return
   }
 
-  if (!token) {
+  if (!code) {
     error.value = '缺少登录凭证，请重新登录'
     return
   }
 
-  // 存储 token 到 localStorage（与现有登录逻辑一致）
-  localStorage.setItem('kb_token', token)
-  localStorage.setItem('kb_user', JSON.stringify({
-    userId: null, name: name || '未知用户', role: role || 'USER'
-  }))
-  localStorage.setItem('kb_refreshToken', refreshToken || '')
+  try {
+    // 用一次性 code 向服务器换取 JWT（token 不会出现在 URL 中）
+    const res = await oidcExchange(code)
+    const data = res.data?.data || res.data
 
-  // 按角色跳转
-  if (role === 'USER') {
-    router.replace('/')
-  } else {
-    router.replace('/admin/dashboard')
+    const token = data.token as string
+    const refreshToken = data.refreshToken as string
+    const name = (data.name as string) || '未知用户'
+
+    // 从 JWT payload 中解析 role（服务器签名，不可伪造），而非信任任何 URL 参数
+    let role = 'USER'
+    let userId: number | null = null
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      role = payload.role || 'USER'
+      userId = payload.userId || null
+    } catch {
+      // 退路：使用服务器响应中的 role（通过安全 POST 返回，非 URL 参数）
+      role = (data.role as string) || 'USER'
+    }
+
+    localStorage.setItem('kb_token', token)
+    localStorage.setItem('kb_refreshToken', refreshToken || '')
+    localStorage.setItem('kb_user', JSON.stringify({ userId, name, role }))
+
+    // 按角色跳转
+    if (role === 'USER') {
+      router.replace('/')
+    } else {
+      router.replace('/admin/dashboard')
+    }
+  } catch (e: any) {
+    error.value = e.response?.data?.message || '登录失败，请重试'
   }
 })
 

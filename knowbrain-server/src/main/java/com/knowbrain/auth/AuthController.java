@@ -245,6 +245,38 @@ public class AuthController {
         return Result.ok(providers);
     }
 
+    @Operation(summary = "OIDC 令牌交换", description = "用一次性 code 换取 JWT token。OIDC 登录成功后使用，防止 token 出现在 URL 中")
+    @PostMapping("/oidc-exchange")
+    public Result<Map<String, Object>> oidcExchange(@RequestBody Map<String, String> body) {
+        String code = body.get("code");
+        if (code == null || code.isBlank()) {
+            return Result.badRequest("缺少交换码");
+        }
+        // 只允许字母数字
+        if (!code.matches("^[a-zA-Z0-9]+$")) {
+            return Result.badRequest("无效的交换码格式");
+        }
+        String redisKey = "kb:oidc:code:" + code;
+        String redisValue = stringRedisTemplate.opsForValue().get(redisKey);
+        if (redisValue == null) {
+            return Result.fail(401, "交换码无效或已过期，请重新登录");
+        }
+        // 一次性使用：立即删除
+        stringRedisTemplate.delete(redisKey);
+
+        String[] parts = redisValue.split("\n", 4);
+        if (parts.length < 4) {
+            return Result.fail(500, "交换码数据异常");
+        }
+
+        return Result.ok(Map.of(
+                "token", parts[0],
+                "refreshToken", parts[1],
+                "name", parts[2],
+                "role", parts[3]
+        ));
+    }
+
     /** 将单个 token 加入黑名单 */
     private void blacklistToken(String token) {
         String jti = jwtUtil.getJti(token);

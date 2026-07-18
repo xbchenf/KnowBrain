@@ -47,6 +47,9 @@ export const logoutApi = () =>
 export const getOidcProviders = () =>
   api.get('/auth/oidc-providers')
 
+export const oidcExchange = (code: string) =>
+  api.post('/auth/oidc-exchange', { code })
+
 // ================== 空间 ==================
 export const listSpaces = (page = 1, size = 20) =>
   api.get('/spaces', { params: { page, size } })

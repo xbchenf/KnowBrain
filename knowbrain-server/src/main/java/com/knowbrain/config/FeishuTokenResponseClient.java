@@ -9,25 +9,26 @@ import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCo
 import org.springframework.security.oauth2.core.endpoint.OAuth2AccessTokenResponse;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 飞书 OIDC Token 客户端。
+ * 飞书 OAuth2 V3 Token 客户端。
  *
- * <p>飞书新版 OIDC 需要两步认证：
- * <ol>
- *   <li>用 app_id + app_secret 换取 app_access_token</li>
- *   <li>用 app_access_token 作 Bearer 换取 user_access_token</li>
- * </ol>
+ * <p>飞书 V3 OAuth2 Token 端点：
+ * <pre>{@code POST https://accounts.feishu.cn/oauth/v3/token}</pre>
+ * 请求体 JSON：{@code grant_type, client_id, client_secret, code, redirect_uri}
  *
- * <p>文档：https://open.feishu.cn/document/sso/web-application-sso/login-overview
+ * <p>响应为扁平 JSON（不再嵌套 data）：
+ * <pre>{@code {"code":0, "access_token":"...", "expires_in":7200, ...}}</pre>
+ *
+ * <p>文档：https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/authentication-management/access-token/get-user-access-token-v3
  */
 @Slf4j
 public class FeishuTokenResponseClient
         implements OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> {
 
-    private static final String APP_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal";
-    private static final String USER_TOKEN_URL = "https://open.feishu.cn/open-apis/authen/v1/oidc/access_token";
+    private static final String TOKEN_URL = "https://accounts.feishu.cn/oauth/v3/token";
 
     @Override
     public OAuth2AccessTokenResponse getTokenResponse(
@@ -35,60 +36,40 @@ public class FeishuTokenResponseClient
 
         var registration = grantRequest.getClientRegistration();
         String code = grantRequest.getAuthorizationExchange().getAuthorizationResponse().getCode();
-        String clientId = registration.getClientId();
-        String clientSecret = registration.getClientSecret();
+        String redirectUri = grantRequest.getAuthorizationExchange().getAuthorizationRequest().getRedirectUri();
 
-        // Step 1: 获取 app_access_token
-        log.debug("[OIDC] 获取 app_access_token: clientId={}", clientId);
-        JSONObject tokenJson;
-        try (var resp = HttpRequest.post(APP_TOKEN_URL)
+        Map<String, Object> reqBody = new HashMap<>();
+        reqBody.put("grant_type", "authorization_code");
+        reqBody.put("client_id", registration.getClientId());
+        reqBody.put("client_secret", registration.getClientSecret());
+        reqBody.put("code", code);
+        reqBody.put("redirect_uri", redirectUri);
+
+        log.debug("[OIDC] 请求飞书 V3 Token: clientId={}", registration.getClientId());
+
+        JSONObject json;
+        try (var resp = HttpRequest.post(TOKEN_URL)
                 .header("Content-Type", "application/json; charset=utf-8")
-                .body(JSONUtil.toJsonStr(Map.of("app_id", clientId, "app_secret", clientSecret)))
+                .body(JSONUtil.toJsonStr(reqBody))
                 .timeout(10000)
                 .execute()) {
-            tokenJson = JSONUtil.parseObj(resp.body());
-        }
-        if (tokenJson.getInt("code", -1) != 0) {
-            log.error("[OIDC] 获取 app_access_token 失败: code={}", tokenJson.getInt("code"));
-            throw new RuntimeException("获取飞书 app_access_token 失败");
-        }
-        String appAccessToken = tokenJson.getStr("app_access_token");
-        if (appAccessToken == null || appAccessToken.isEmpty()) {
-            throw new RuntimeException("获取飞书 app_access_token 失败");
+            json = JSONUtil.parseObj(resp.body());
         }
 
-        // Step 2: 用 app_access_token 换取 user_access_token
-        log.debug("[OIDC] 换取 user_access_token");
-        JSONObject userJson;
-        try (var resp = HttpRequest.post(USER_TOKEN_URL)
-                .header("Content-Type", "application/json; charset=utf-8")
-                .header("Authorization", "Bearer " + appAccessToken)
-                .body(JSONUtil.toJsonStr(Map.of(
-                        "grant_type", "authorization_code",
-                        "code", code)))
-                .timeout(10000)
-                .execute()) {
-            userJson = JSONUtil.parseObj(resp.body());
-        }
-        if (userJson.getInt("code", -1) != 0) {
-            log.error("[OIDC] 换取 user_access_token 失败: code={}", userJson.getInt("code"));
-            throw new RuntimeException("换取飞书 user_access_token 失败");
+        if (json.getInt("code", -1) != 0) {
+            log.error("[OIDC] 飞书 V3 Token 失败: code={}", json.getInt("code"));
+            throw new RuntimeException("获取飞书 user_access_token 失败");
         }
 
-        JSONObject data = userJson.getJSONObject("data");
-        if (data == null) {
-            throw new RuntimeException("换取飞书 user_access_token 失败");
-        }
-
-        String accessToken = data.getStr("access_token");
-        long expiresIn = data.getLong("expires_in", 3600L);
-        String refreshToken = data.getStr("refresh_token");
+        String accessToken = json.getStr("access_token");
+        long expiresIn = json.getLong("expires_in", 7200L);
+        String refreshToken = json.getStr("refresh_token");
 
         if (accessToken == null || accessToken.isEmpty()) {
-            throw new RuntimeException("换取飞书 user_access_token 失败");
+            throw new RuntimeException("获取飞书 user_access_token 失败");
         }
 
-        log.debug("[OIDC] 飞书 Token 获取成功: expires_in={}", expiresIn);
+        log.debug("[OIDC] 飞书 V3 Token 获取成功: expires_in={}", expiresIn);
 
         var builder = OAuth2AccessTokenResponse.withToken(accessToken)
                 .tokenType(org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType.BEARER)

@@ -172,6 +172,9 @@ services:
       DINGTALK_APP_KEY: ${DINGTALK_APP_KEY:-}
       DINGTALK_APP_SECRET: ${DINGTALK_APP_SECRET:-}
       DINGTALK_ROBOT_CODE: ${DINGTALK_ROBOT_CODE:-}
+      # 钉钉 OAuth2 登录（H5 微应用）
+      DINGTALK_H5_APP_CLIENT_ID: ${DINGTALK_H5_APP_CLIENT_ID:-}
+      DINGTALK_H5_APP_CLIENT_SECRET: ${DINGTALK_H5_APP_CLIENT_SECRET:-}
       # 飞书 Bot（IM_FEISHU_* 直接映射到 Spring im.feishu.*，绕过 application.yml 占位符解析时序问题）
       FEISHU_ENABLED: ${FEISHU_ENABLED:-false}
       FEISHU_APP_ID: ${FEISHU_APP_ID:-}

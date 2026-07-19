@@ -13,6 +13,8 @@ logging:
   level:
     com.knowbrain: DEBUG
     org.springframework.ai: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: TRACE
 
 # Agent 检索智能体（开发环境默认开启）
 rag:
@@ -21,9 +23,6 @@ rag:
 
 # ============================================================
 # OAuth2/OIDC 企业 SSO
-# 测试飞书登录前，需要在飞书开放平台：
-#   → 你的应用 → 安全设置 → 添加回调域名: http://localhost:8080
-#   → 权限管理 → 开通「获取用户信息」(contact:user.base:readonly)
 # ============================================================
 spring:
   security:
@@ -38,9 +37,22 @@ spring:
             redirect-uri: 'http://localhost/login/oauth2/code/feishu'
             scope:
             client-name: 飞书
+          dingtalk:
+            client-id: ${DINGTALK_H5_APP_CLIENT_ID}
+            client-secret: ${DINGTALK_H5_APP_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            client-authentication-method: client_secret_post
+            redirect-uri: 'http://localhost/login/oauth2/code/dingtalk'
+            scope:
+            client-name: 钉钉
         provider:
           feishu:
             authorization-uri: https://open.feishu.cn/open-apis/authen/v1/authorize
-            token-uri: https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
+            token-uri: https://accounts.feishu.cn/oauth/v3/token
             user-info-uri: https://open.feishu.cn/open-apis/authen/v1/user_info
             userNameAttribute: sub
+          dingtalk:
+            authorization-uri: https://login.dingtalk.com/oauth2/auth
+            token-uri: https://api.dingtalk.com/v1.0/oauth2/userAccessToken
+            user-info-uri: https://api.dingtalk.com/v1.0/contact/users/me
+            userNameAttribute: openId

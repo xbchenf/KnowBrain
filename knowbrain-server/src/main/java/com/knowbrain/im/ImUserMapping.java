@@ -84,8 +84,9 @@ public class ImUserMapping {
             SysUser user = userMapper.selectById(identity.getKbUserId());
             if (user != null) {
                 if ("DISABLED".equals(user.getStatus())) {
-                    log.warn("[IM] 用户已禁用: kbUserId={}, imUser={}/{}",
+                    log.warn("[IM] 用户已禁用，拒绝 IM 消息: kbUserId={}, imUser={}/{}",
                             user.getId(), platform, imUserId);
+                    return null;
                 }
                 // 懒更新: 部门 + 显示名（映射表可能刚刚配置）
                 if (user.getDepartmentId() == null) {

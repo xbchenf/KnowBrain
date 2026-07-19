@@ -311,7 +311,7 @@ onMounted(async () => {
 
   // 加载用户列表（成员管理使用）
   try {
-    const userRes = await listUsers({ page: 1, size: 200 })
+    const userRes = await listUsers({ page: 1, size: 200, status: 'ACTIVE' })
     allUsers.value = userRes.data?.data?.records || userRes.data?.data || []
   } catch (e) {
     console.error('加载用户列表失败:', e)

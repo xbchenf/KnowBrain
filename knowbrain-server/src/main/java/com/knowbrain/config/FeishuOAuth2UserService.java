@@ -55,7 +55,7 @@ public class FeishuOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
         // open_id 作为 OIDC 用户唯一标识
         String nameAttr = attributes.containsKey("open_id") ? "open_id" : "name";
 
-        log.debug("[OIDC] 飞书用户加载成功: open_id={}", attributes.get("open_id"));
+        log.debug("[OIDC] 飞书用户加载成功");
 
         return new DefaultOAuth2User(
                 Collections.singleton(new SimpleGrantedAuthority("ROLE_USER")),

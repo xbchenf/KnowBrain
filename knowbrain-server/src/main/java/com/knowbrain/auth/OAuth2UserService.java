@@ -40,6 +40,40 @@ public class OAuth2UserService {
                         .eq(ImUserIdentity::getPlatform, platform)
                         .eq(ImUserIdentity::getPlatformUid, platformUid));
 
+        // 1b. platform+platformUid 未匹配 → 尝试手机号兜底匹配
+        // 钉钉 IM Bot 和 OAuth2 返回的用户标识符可能不同（userid vs openId），
+        // 但手机号相同，可以关联到同一用户
+        if (identity == null && mobile != null && !mobile.isEmpty()) {
+            // 先查 kb_user_identity 中有没有同手机号的绑定
+            ImUserIdentity mobileIdentity = identityMapper.selectOne(
+                    new LambdaQueryWrapper<ImUserIdentity>()
+                            .eq(ImUserIdentity::getPlatform, platform)
+                            .eq(ImUserIdentity::getMobile, mobile));
+            if (mobileIdentity != null) {
+                mobileIdentity.setPlatformUid(platformUid);
+                if (name != null) mobileIdentity.setPlatformName(name);
+                identityMapper.updateById(mobileIdentity);
+                identity = mobileIdentity;
+            }
+            // 再查 kb_sys_user 中的手机号（IM Bot 绑定可能没填 identity.mobile）
+            if (identity == null) {
+                SysUser userByPhone = userMapper.selectOne(
+                        new LambdaQueryWrapper<SysUser>()
+                                .eq(SysUser::getPhone, mobile));
+                if (userByPhone != null) {
+                    // 新增一条 identity 绑定到该手机号对应的用户
+                    ImUserIdentity newLink = new ImUserIdentity();
+                    newLink.setKbUserId(userByPhone.getId());
+                    newLink.setPlatform(platform);
+                    newLink.setPlatformUid(platformUid);
+                    newLink.setPlatformName(name);
+                    newLink.setMobile(mobile);
+                    identityMapper.insert(newLink);
+                    identity = newLink;
+                }
+            }
+        }
+
         if (identity != null) {
             SysUser user = userMapper.selectById(identity.getKbUserId());
             if (user != null && "ACTIVE".equals(user.getStatus())) {
@@ -47,6 +81,19 @@ public class OAuth2UserService {
                 if (name != null && !name.equals(identity.getPlatformName())) {
                     identity.setPlatformName(name);
                     identityMapper.updateById(identity);
+                }
+                // 同步更新本地用户的显示名和手机号
+                boolean needUpdate = false;
+                if (name != null && !name.equals(user.getName())) {
+                    user.setName(name);
+                    needUpdate = true;
+                }
+                if (mobile != null && !mobile.isEmpty() && !mobile.equals(user.getPhone())) {
+                    user.setPhone(mobile);
+                    needUpdate = true;
+                }
+                if (needUpdate) {
+                    userMapper.updateById(user);
                 }
                 log.debug("[OIDC] 已有用户: platform={}, platformUid={}, kbUserId={}",
                         platform, platformUid, user.getId());

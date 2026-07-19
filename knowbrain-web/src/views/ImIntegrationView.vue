@@ -446,7 +446,7 @@ async function searchUsers(query: string) {
   if (!query || query.length < 1) { userSearchResults.value = []; return }
   userSearchLoading.value = true
   try {
-    const res = await listUsers({ keyword: query, page: 1, size: 20 })
+    const res = await listUsers({ keyword: query, page: 1, size: 20, status: 'ACTIVE' })
     userSearchResults.value = res.data.data?.records || []
   } catch { userSearchResults.value = [] }
   finally { userSearchLoading.value = false }

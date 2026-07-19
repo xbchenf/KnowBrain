@@ -2,7 +2,7 @@
 
 > 调研日期：2026-07-14 | 基于 Dify / FastGPT / Glean / Microsoft Copilot Studio / ServiceNow 对标分析
 > 
-> **当前状态**：检索智能体已交付 + A/B 评测完成（详见 [Agent-Phase1-技术方案](Agent-Phase1-技术方案.md)）。Agent V1（Function Calling + SQL）评估为价值不大已暂缓。下一优先级：缩小 Context Recall 差距，推动 Agent 默认开启。
+> **当前状态**：检索智能体已交付 + A/B 评测完成（详见 [Agent-Phase1-技术方案](Agent-Phase1-技术方案.md)）。Agent V1（Function Calling + SQL）评估为价值不大已暂缓。后续进化方向详见 [Agent-产品进化指南](Agent-产品进化指南.md)：低成本增强 AI 感知 + 知识全生命周期 Agent + 不越界做通用平台。
 
 ---
 

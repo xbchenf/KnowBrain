@@ -47,11 +47,13 @@
         <el-table-column prop="linkedAt" label="关联时间" width="180" />
         <el-table-column label="操作" width="80">
           <template #default="{ row }">
-            <el-popconfirm title="确定要解除关联吗？" @confirm="unlink(row.id)">
+            <!-- 仅 OAuth2 平台可解绑（企微不走 OAuth2，解绑后无法重新关联） -->
+            <el-popconfirm v-if="row.platform !== 'wecom'" title="确定要解除关联吗？" @confirm="unlink(row.id)">
               <template #reference>
                 <el-button type="danger" link size="small">解绑</el-button>
               </template>
             </el-popconfirm>
+            <span v-else style="color: #c0c4cc; font-size: 12px">—</span>
           </template>
         </el-table-column>
       </el-table>

@@ -277,6 +277,8 @@ async function doCreate() {
     ElMessage.success('用户创建成功')
     createVisible.value = false
     load()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '创建失败')
   } finally {
     submitting.value = false
   }
@@ -313,6 +315,8 @@ async function doEdit() {
     ElMessage.success('用户信息已更新')
     editVisible.value = false
     load()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '更新失败')
   } finally {
     submitting.value = false
   }

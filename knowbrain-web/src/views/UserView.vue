@@ -299,7 +299,8 @@ function openEdit(row: any) {
 
 async function doEdit() {
   const f = editForm.value
-  if (f.phone.trim() && !validPhone(f.phone.trim())) return ElMessage.warning('请输入正确的手机号')
+  if (!f.phone.trim()) return ElMessage.warning('请输入手机号')
+  if (!validPhone(f.phone.trim())) return ElMessage.warning('手机号格式不正确')
   submitting.value = true
   try {
     await updateUser(f.id, {

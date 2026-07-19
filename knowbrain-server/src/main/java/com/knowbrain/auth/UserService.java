@@ -116,16 +116,17 @@ public class UserService {
         if (updates.getName() != null) user.setName(updates.getName());
         if (updates.getPhone() != null) {
             String phone = updates.getPhone();
-            if (!phone.isBlank()) {
-                if (!phone.matches("^1[3-9]\\d{9}$")) {
-                    throw new BizException(400, "手机号格式不正确");
-                }
-                if (userMapper.selectCount(
-                        new LambdaQueryWrapper<SysUser>()
-                                .eq(SysUser::getPhone, phone)
-                                .ne(SysUser::getId, id)) > 0) {
-                    throw new BizException(400, "该手机号已被其他用户使用");
-                }
+            if (phone.isBlank()) {
+                throw new BizException(400, "手机号不能为空");
+            }
+            if (!phone.matches("^1[3-9]\\d{9}$")) {
+                throw new BizException(400, "手机号格式不正确");
+            }
+            if (userMapper.selectCount(
+                    new LambdaQueryWrapper<SysUser>()
+                            .eq(SysUser::getPhone, phone)
+                            .ne(SysUser::getId, id)) > 0) {
+                throw new BizException(400, "该手机号已被其他用户使用");
             }
             user.setPhone(phone);
         }
@@ -224,7 +225,8 @@ public class UserService {
         SysUser user = userMapper.selectById(userId);
         if (user == null) throw new BizException(404, "用户不存在");
 
-        if (phone != null && !phone.isBlank()) {
+        if (phone != null) {
+            if (phone.isBlank()) throw new BizException(400, "手机号不能为空");
             if (!phone.matches("^1[3-9]\\d{9}$")) {
                 throw new BizException(400, "手机号格式不正确");
             }

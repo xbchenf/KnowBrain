@@ -260,5 +260,5 @@ function selectChat(i: number) {
 .logout-btn:hover { background: #fee2e2; color: #ef4444; }
 
 /* ===== 主区域 ===== */
-.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.main-area { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
 </style>

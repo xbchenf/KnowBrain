@@ -1,6 +1,8 @@
 # KnowBrain Agent 智能体技术方案
 
 > 调研日期：2026-07-14 | 基于 Dify / FastGPT / Glean / Microsoft Copilot Studio / ServiceNow 对标分析
+> 
+> **当前状态**：检索智能体已交付 + A/B 评测完成（详见 [Agent-Phase1-技术方案](Agent-Phase1-技术方案.md)）。Agent V1（Function Calling + SQL）评估为价值不大已暂缓。下一优先级：缩小 Context Recall 差距，推动 Agent 默认开启。
 
 ---
 
@@ -71,7 +73,7 @@
 
 ## 二、KnowBrain Agent 三阶段规划
 
-### Phase 1 — Agent V1：基础工具调用（3 周）
+### Phase 1 — Agent V1：基础工具调用（3 周）⚠️ 价值不大，暂缓
 
 对标 Dify/FastGPT Tier 1。**目标**：让 KnowBrain 不仅搜文档内容，也能查结构化数据。
 
@@ -82,6 +84,8 @@ Agent V1 = Function Calling 框架（Spring AI 原生）
          + 安全边界（仅 SELECT + 表白名单 + 行数限制 + 工具白名单）
          + 降级策略（FC 失败 → RAG 回退）
 ```
+
+> **决策（2026-07-19）**：暂缓。SQL 统计查询与现有 Dashboard 统计看板高度重叠（热门问题、每日趋势、FAQ 命中率、文档排行等均已在管理后台可视化呈现），自然语言查询结构化数据的增量价值有限。日期工具 5 行代码，不值得为此搭建整套 Function Calling 基础设施。未来如有明确的跨表组合查询需求（如「哪些文档被标记为无用最多」需要 JOIN feedback + document），再重新评估。
 
 ### Phase 2 — Agent V2：工作流编排 + MCP（3-5 周，V1 发布后启动）
 

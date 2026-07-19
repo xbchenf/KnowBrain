@@ -18,6 +18,14 @@ const router = createRouter({
       component: () => import('../views/LoginCallbackView.vue')
     },
 
+    // ==================== OAuth2 绑定页（无手机号时补全信息） ====================
+    {
+      path: '/login/bind',
+      name: 'login-bind',
+      component: () => import('../views/BindOAuth2View.vue'),
+      meta: { guest: true }
+    },
+
     // ==================== Q&A 问答界面（WebLayout 侧边栏） ====================
     {
       path: '/',
@@ -25,7 +33,8 @@ const router = createRouter({
       meta: { auth: true },
       children: [
         { path: '', name: 'chat', component: () => import('../views/ChatView.vue') },
-        { path: 'docs', name: 'docs', component: () => import('../views/DocBrowseView.vue') }
+        { path: 'docs', name: 'docs', component: () => import('../views/DocBrowseView.vue') },
+        { path: 'settings', name: 'settings', component: () => import('../views/ProfileView.vue') }
       ]
     },
 

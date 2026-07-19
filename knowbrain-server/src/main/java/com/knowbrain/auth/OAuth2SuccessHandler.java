@@ -1,5 +1,6 @@
 package com.knowbrain.auth;
 
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -61,14 +62,36 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         String platform = token.getAuthorizedClientRegistrationId();
         OAuth2User oauth2User = token.getPrincipal();
 
-        // 提取 IdP 用户信息
         String platformUid = oauth2User.getName();
         String name = oauth2User.getAttribute("name");
         String mobile = oauth2User.getAttribute("mobile");
 
         log.info("[OIDC] 登录成功: platform={}, platformUid={}, name={}", platform, platformUid, name);
 
-        // 查找或创建本地用户
+        // 分支 1: 关联账号流程（Cookie 中有 kb_link_token）
+        String linkToken = getCookie(request, "kb_link_token");
+        if (linkToken != null && !linkToken.isBlank()) {
+            handleAccountLinking(response, linkToken, platform, platformUid, name, mobile);
+            return;
+        }
+
+        // 分支 2: 无手机号 → 重定向到绑定页
+        if (mobile == null || mobile.isBlank()) {
+            String bindCode = UUID.randomUUID().toString().replace("-", "");
+            redis.opsForValue().set("kb:oidc:bind:" + bindCode,
+                    platform + "\n" + platformUid + "\n" + (name != null ? name : ""),
+                    Duration.ofMinutes(5));
+            response.sendRedirect(frontendUrl + "/login/bind?code=" + bindCode);
+            return;
+        }
+
+        // 分支 3: 正常流程（有手机号）
+        completeLogin(response, platform, platformUid, name, mobile);
+    }
+
+    /** 正常 OAuth2 登录完成（有手机号） */
+    private void completeLogin(HttpServletResponse response,
+                               String platform, String platformUid, String name, String mobile) throws IOException {
         SysUser user;
         try {
             user = oAuth2UserService.lookupOrCreate(platform, platformUid, name, mobile);
@@ -78,20 +101,61 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             return;
         }
 
-        // 签发 JWT
         String jwt = jwtUtil.createToken(user.getId(), user.getUsername(), user.getRole());
         String refreshToken = jwtUtil.createRefreshToken(user.getId(), user.getUsername(), user.getRole());
 
-        // 生成一次性交换码，将 token 存入 Redis
         String code = UUID.randomUUID().toString().replace("-", "");
-        String redisKey = OIDC_CODE_PREFIX + code;
-        String redisValue = jwt + "\n" + refreshToken + "\n"
-                + (user.getName() != null ? user.getName() : "")
-                + "\n" + user.getRole();
-        redis.opsForValue().set(redisKey, redisValue, CODE_TTL);
+        redis.opsForValue().set(OIDC_CODE_PREFIX + code,
+                jwt + "\n" + refreshToken + "\n"
+                        + (user.getName() != null ? user.getName() : "")
+                        + "\n" + user.getRole(),
+                CODE_TTL);
 
-        // 重定向到前端回调页，URL 仅携带一次性 code
-        String redirectUrl = frontendUrl + "/login/callback?code=" + code;
-        response.sendRedirect(redirectUrl);
+        response.sendRedirect(frontendUrl + "/login/callback?code=" + code);
+    }
+
+    /** 关联账号流程：从 Redis 读取 userId，绑定 OAuth2 身份 */
+    private void handleAccountLinking(HttpServletResponse response,
+                                       String linkToken, String platform,
+                                       String platformUid, String name, String mobile) throws IOException {
+        String redisKey = "kb:link:" + linkToken;
+        String value = redis.opsForValue().get(redisKey);
+        // 立即删除 Redis key + 清除 Cookie
+        redis.delete(redisKey);
+        Cookie clearCookie = new Cookie("kb_link_token", "");
+        clearCookie.setPath("/");
+        clearCookie.setMaxAge(0);
+        response.addCookie(clearCookie);
+
+        if (value == null) {
+            response.sendRedirect(frontendUrl + "/settings?link_error=expired");
+            return;
+        }
+
+        String[] parts = value.split("\n", 2);
+        if (parts.length < 2) {
+            response.sendRedirect(frontendUrl + "/settings?link_error=invalid");
+            return;
+        }
+
+        Long userId = Long.parseLong(parts[0]);
+        String expectedPlatform = parts[1];
+
+        if (!platform.equals(expectedPlatform)) {
+            response.sendRedirect(frontendUrl + "/settings?link_error=platform_mismatch");
+            return;
+        }
+
+        oAuth2UserService.linkIdentity(userId, platform, platformUid, name, mobile);
+        log.info("[OIDC] 关联账号成功: userId={}, platform={}, platformUid={}", userId, platform, platformUid);
+        response.sendRedirect(frontendUrl + "/settings?linked=" + platform);
+    }
+
+    private String getCookie(HttpServletRequest request, String name) {
+        if (request.getCookies() == null) return null;
+        for (Cookie c : request.getCookies()) {
+            if (name.equals(c.getName())) return c.getValue();
+        }
+        return null;
     }
 }

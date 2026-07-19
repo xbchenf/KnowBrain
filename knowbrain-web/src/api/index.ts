@@ -38,8 +38,8 @@ api.interceptors.response.use(
 export const login = (username: string, password: string) =>
   api.post('/auth/login', { username, password })
 
-export const register = (username: string, password: string, name: string) =>
-  api.post('/auth/register', { username, password, name })
+export const register = (username: string, password: string, name: string, phone: string) =>
+  api.post('/auth/register', { username, password, name, phone })
 
 export const logoutApi = () =>
   api.post('/auth/logout')
@@ -49,6 +49,24 @@ export const getOidcProviders = () =>
 
 export const oidcExchange = (code: string) =>
   api.post('/auth/oidc-exchange', { code })
+
+export const bindOAuth2 = (code: string, phone: string, name: string) =>
+  api.post('/auth/bind-oauth2', { code, phone, name })
+
+export const getProfile = () =>
+  api.get('/auth/profile')
+
+export const updateProfile = (data: { name?: string; phone?: string }) =>
+  api.put('/auth/profile', data)
+
+export const listMyIdentities = () =>
+  api.get('/auth/identities')
+
+export const unbindMyIdentity = (id: number) =>
+  api.delete(`/auth/identities/${id}`)
+
+export const prepareLink = (platform: string) =>
+  api.post('/auth/prepare-link', { platform })
 
 // ================== 空间 ==================
 export const listSpaces = (page = 1, size = 20) =>

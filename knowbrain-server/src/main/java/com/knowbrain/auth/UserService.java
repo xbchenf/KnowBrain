@@ -4,6 +4,8 @@ import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.knowbrain.common.GlobalExceptionHandler.BizException;
+import com.knowbrain.im.entity.ImUserIdentity;
+import com.knowbrain.im.mapper.ImUserIdentityMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -11,6 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.time.Instant;
 
 /**
@@ -23,6 +29,7 @@ public class UserService {
 
     private final SysUserMapper userMapper;
     private final StringRedisTemplate redis;
+    private final ImUserIdentityMapper identityMapper;
 
     private static final String INVALID_BEFORE_KEY = "kb:token:invalid_before:";
 
@@ -150,5 +157,66 @@ public class UserService {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    /**
+     * 自服务：获取个人资料（含关联的 OAuth2 身份列表）
+     */
+    public Map<String, Object> getProfile(Long userId) {
+        SysUser user = userMapper.selectById(userId);
+        if (user == null) throw new BizException(404, "用户不存在");
+
+        List<Map<String, Object>> identities = identityMapper.selectList(
+                        new LambdaQueryWrapper<ImUserIdentity>()
+                                .eq(ImUserIdentity::getKbUserId, userId))
+                .stream().map(i -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", i.getId());
+                    m.put("platform", i.getPlatform());
+                    m.put("platformUid", i.getPlatformUid());
+                    m.put("platformName", i.getPlatformName());
+                    m.put("linkedAt", i.getLinkedAt());
+                    return m;
+                }).collect(Collectors.toList());
+
+        Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("userId", user.getId());
+        profile.put("username", user.getUsername());
+        profile.put("name", user.getName());
+        profile.put("phone", user.getPhone());
+        profile.put("role", user.getRole());
+        profile.put("status", user.getStatus());
+        profile.put("departmentId", user.getDepartmentId());
+        profile.put("createTime", user.getCreateTime());
+        profile.put("identities", identities);
+        return profile;
+    }
+
+    /**
+     * 自服务：更新个人资料（姓名、手机号）
+     */
+    public SysUser updateProfile(Long userId, String name, String phone) {
+        SysUser user = userMapper.selectById(userId);
+        if (user == null) throw new BizException(404, "用户不存在");
+
+        if (phone != null && !phone.isBlank()) {
+            if (!phone.matches("^1[3-9]\\d{9}$")) {
+                throw new BizException(400, "手机号格式不正确");
+            }
+            // 唯一性检查（排除自身）
+            if (userMapper.selectCount(
+                    new LambdaQueryWrapper<SysUser>()
+                            .eq(SysUser::getPhone, phone)
+                            .ne(SysUser::getId, userId)) > 0) {
+                throw new BizException(400, "该手机号已被其他用户使用");
+            }
+            user.setPhone(phone);
+        }
+        if (name != null && !name.isBlank()) {
+            user.setName(name);
+        }
+        userMapper.updateById(user);
+        log.info("个人资料更新: userId={}", userId);
+        return user;
     }
 }

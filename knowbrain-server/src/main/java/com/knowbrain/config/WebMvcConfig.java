@@ -22,8 +22,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         // 健康检查
                         "/api/v1/health",
-                        // 认证接口（登录/注册）
-                        "/api/v1/auth/**",
+                        // 认证接口（仅明确列出无需认证的端点）
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/logout",
+                        "/api/v1/auth/oidc-providers",
+                        "/api/v1/auth/oidc-exchange",
+                        "/api/v1/auth/bind-oauth2",
                         // IM Bot 回调（企微/钉钉/飞书自有签名验证机制，不走 JWT）
                         "/api/v1/im/**"
                 );

@@ -70,7 +70,7 @@
       </template>
 
       <div class="sidebar-footer">
-        <div class="user-info">
+        <div class="user-info" @click="goSettings" title="个人设置">
           <div class="user-avatar">{{ userInitial }}</div>
           <span class="user-name">{{ userName }}</span>
         </div>
@@ -138,6 +138,10 @@ async function loadSpaces() {
     const res = await listSpaces()
     spaces.value = res.data?.data?.records || res.data?.data || []
   } catch { /* ignore */ }
+}
+
+function goSettings() {
+  router.push('/settings')
 }
 
 async function logout() {

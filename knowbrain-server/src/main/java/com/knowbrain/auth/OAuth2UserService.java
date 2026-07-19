@@ -159,4 +159,88 @@ public class OAuth2UserService {
         }
         throw new IllegalStateException("无法生成唯一用户名: " + base);
     }
+
+    /**
+     * 完成 OAuth2 绑定（用于无手机号场景）。
+     * 流程：先查已有 identity → 再按手机号查已有用户 → 都不存在则 JIT Provisioning。
+     *
+     * @return 已绑定或新创建的用户
+     */
+    @Transactional
+    public SysUser completeBinding(String platform, String platformUid, String phone, String name) {
+        // 1. 已有 identity → 直接返回
+        ImUserIdentity identity = identityMapper.selectOne(
+                new LambdaQueryWrapper<ImUserIdentity>()
+                        .eq(ImUserIdentity::getPlatform, platform)
+                        .eq(ImUserIdentity::getPlatformUid, platformUid));
+        if (identity != null) {
+            SysUser user = userMapper.selectById(identity.getKbUserId());
+            if (user != null && "ACTIVE".equals(user.getStatus())) return user;
+        }
+
+        // 2. 按手机号查已有用户
+        SysUser user = userMapper.selectOne(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getPhone, phone));
+        if (user != null) {
+            if ("DISABLED".equals(user.getStatus()))
+                throw new IllegalStateException("该账号已被禁用，请联系管理员");
+            // 关联 identity
+            createIdentity(user.getId(), platform, platformUid, name, phone);
+            if (name != null && !name.equals(user.getName())) {
+                user.setName(name);
+                userMapper.updateById(user);
+            }
+            log.info("[OIDC-Bind] 绑定到已有用户: platform={}, platformUid={}, kbUserId={}",
+                    platform, platformUid, user.getId());
+            return user;
+        }
+
+        // 3. 新建用户
+        String username = generateUsername(platform, platformUid);
+        user = new SysUser();
+        user.setUsername(username);
+        user.setPasswordHash("");
+        user.setName(name != null ? name : username);
+        user.setPhone(phone);
+        user.setRole(RoleEnum.USER.getCode());
+        user.setStatus("ACTIVE");
+        userMapper.insert(user);
+        createIdentity(user.getId(), platform, platformUid, name, phone);
+        log.info("[OIDC-Bind] 新用户已创建: platform={}, platformUid={}, kbUserId={}",
+                platform, platformUid, user.getId());
+        return user;
+    }
+
+    /**
+     * 关联 OAuth2 身份到指定用户（用于已登录用户主动关联）。
+     */
+    @Transactional
+    public void linkIdentity(Long kbUserId, String platform, String platformUid, String name, String mobile) {
+        ImUserIdentity existing = identityMapper.selectOne(
+                new LambdaQueryWrapper<ImUserIdentity>()
+                        .eq(ImUserIdentity::getPlatform, platform)
+                        .eq(ImUserIdentity::getPlatformUid, platformUid));
+        if (existing != null) {
+            // 已有绑定 → 改绑到当前用户
+            existing.setKbUserId(kbUserId);
+            if (name != null) existing.setPlatformName(name);
+            if (mobile != null) existing.setMobile(mobile);
+            identityMapper.updateById(existing);
+        } else {
+            createIdentity(kbUserId, platform, platformUid, name, mobile);
+        }
+        log.info("[OIDC-Link] 身份关联: platform={}, platformUid={}, kbUserId={}",
+                platform, platformUid, kbUserId);
+    }
+
+    private void createIdentity(Long kbUserId, String platform, String platformUid, String name, String mobile) {
+        ImUserIdentity identity = new ImUserIdentity();
+        identity.setKbUserId(kbUserId);
+        identity.setPlatform(platform);
+        identity.setPlatformUid(platformUid);
+        identity.setPlatformName(name);
+        identity.setMobile(mobile);
+        identityMapper.insert(identity);
+    }
 }

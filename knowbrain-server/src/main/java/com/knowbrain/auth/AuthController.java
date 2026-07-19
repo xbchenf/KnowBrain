@@ -5,9 +5,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.knowbrain.audit.Auditable;
 import com.knowbrain.common.RAGMetrics;
 import com.knowbrain.common.Result;
+import com.knowbrain.im.entity.ImUserIdentity;
+import com.knowbrain.im.mapper.ImUserIdentityMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -35,6 +39,9 @@ public class AuthController {
     private final TokenBlacklistService blacklistService;
     private final RAGMetrics metrics;
     private final StringRedisTemplate stringRedisTemplate;
+    private final OAuth2UserService oAuth2UserService;
+    private final UserService userService;
+    private final ImUserIdentityMapper identityMapper;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private OAuth2ClientProperties oauth2ClientProperties;
 
@@ -88,14 +95,24 @@ public class AuthController {
         String username = request.get("username") != null ? request.get("username").toString() : null;
         String password = request.get("password") != null ? request.get("password").toString() : null;
         String name = request.get("name") != null ? request.get("name").toString() : username;
-        String phone = request.get("phone") != null ? request.get("phone").toString() : "";
+        String phone = request.get("phone") != null ? request.get("phone").toString() : null;
         Long departmentId = null;
         if (request.containsKey("departmentId") && request.get("departmentId") != null) {
             try {
                 departmentId = Long.valueOf(request.get("departmentId").toString());
-            } catch (NumberFormatException ignored) {
-                // 非法值忽略，保持 null
-            }
+            } catch (NumberFormatException ignored) {}
+        }
+        // 手机号必填校验
+        if (phone == null || phone.isBlank()) {
+            return Result.badRequest("手机号不能为空");
+        }
+        if (!phone.matches("^1[3-9]\\d{9}$")) {
+            return Result.badRequest("手机号格式不正确");
+        }
+        // 手机号唯一性
+        if (userMapper.selectCount(
+                new LambdaQueryWrapper<SysUser>().eq(SysUser::getPhone, phone)) > 0) {
+            return Result.fail(400, "该手机号已被注册");
         }
 
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
@@ -224,6 +241,124 @@ public class AuthController {
                 "role", user.getRole()
         ));
     }
+
+    // ========== OAuth2 绑定（无手机号场景） ==========
+
+    @Operation(summary = "OAuth2 绑定", description = "OAuth2 登录后未返回手机号时，补充手机号完成绑定")
+    @PostMapping("/bind-oauth2")
+    public Result<Map<String, Object>> bindOAuth2(@RequestBody Map<String, String> body) {
+        String code = body.get("code");
+        String phone = body.get("phone");
+        String name = body.get("name");
+
+        if (code == null || code.isBlank()) return Result.badRequest("缺少绑定码");
+        if (!code.matches("^[a-zA-Z0-9]+$")) return Result.badRequest("无效的绑定码格式");
+        if (phone == null || phone.isBlank()) return Result.badRequest("手机号不能为空");
+        if (!phone.matches("^1[3-9]\\d{9}$")) return Result.badRequest("手机号格式不正确");
+        if (name == null || name.isBlank()) return Result.badRequest("姓名不能为空");
+
+        String redisKey = "kb:oidc:bind:" + code;
+        String redisValue = stringRedisTemplate.opsForValue().get(redisKey);
+        if (redisValue == null) return Result.fail(401, "绑定码无效或已过期，请重新登录");
+        stringRedisTemplate.delete(redisKey);
+
+        String[] parts = redisValue.split("\n", 3);
+        if (parts.length < 2) return Result.fail(500, "绑定码数据异常");
+        String platform = parts[0];
+        String platformUid = parts[1];
+        String oauth2Name = parts.length > 2 ? parts[2] : name;
+        if (name == null || name.isBlank()) name = oauth2Name;
+
+        SysUser user;
+        try {
+            user = oAuth2UserService.completeBinding(platform, platformUid, phone, name);
+        } catch (IllegalStateException e) {
+            return Result.fail(403, e.getMessage());
+        }
+
+        String token = jwtUtil.createToken(user.getId(), user.getUsername(), user.getRole());
+        String refreshToken = jwtUtil.createRefreshToken(user.getId(), user.getUsername(), user.getRole());
+        log.info("OAuth2 绑定完成: platform={}, platformUid={}, kbUserId={}", platform, platformUid, user.getId());
+
+        return Result.ok(Map.of(
+                "token", token,
+                "refreshToken", refreshToken,
+                "userId", user.getId(),
+                "name", user.getName(),
+                "role", user.getRole()
+        ));
+    }
+
+    // ========== 自服务（需认证但不需要 ADMIN 角色） ==========
+
+    @Operation(summary = "个人资料", description = "获取当前登录用户的个人资料和关联身份")
+    @GetMapping("/profile")
+    public Result<Map<String, Object>> getProfile(HttpServletRequest servletRequest) {
+        Long userId = (Long) servletRequest.getAttribute("userId");
+        return Result.ok(userService.getProfile(userId));
+    }
+
+    @Operation(summary = "修改个人资料", description = "当前用户修改自己的姓名和手机号")
+    @PutMapping("/profile")
+    public Result<Map<String, Object>> updateProfile(@RequestBody Map<String, String> body,
+                                                      HttpServletRequest servletRequest) {
+        Long userId = (Long) servletRequest.getAttribute("userId");
+        String name = body.get("name");
+        String phone = body.get("phone");
+        if (name == null && phone == null) return Result.badRequest("至少需要提供 name 或 phone");
+        SysUser user = userService.updateProfile(userId, name, phone);
+        return Result.ok("修改成功", userService.getProfile(user.getId()));
+    }
+
+    @Operation(summary = "关联身份列表", description = "获取当前用户关联的 OAuth2 身份列表")
+    @GetMapping("/identities")
+    public Result<List<ImUserIdentity>> listMyIdentities(HttpServletRequest servletRequest) {
+        Long userId = (Long) servletRequest.getAttribute("userId");
+        List<ImUserIdentity> list = identityMapper.selectList(
+                new LambdaQueryWrapper<ImUserIdentity>()
+                        .eq(ImUserIdentity::getKbUserId, userId));
+        return Result.ok(list);
+    }
+
+    @Operation(summary = "解除关联", description = "解绑指定的 OAuth2 身份")
+    @DeleteMapping("/identities/{id}")
+    public Result<Void> unbindMyIdentity(@PathVariable Long id, HttpServletRequest servletRequest) {
+        Long userId = (Long) servletRequest.getAttribute("userId");
+        ImUserIdentity identity = identityMapper.selectById(id);
+        if (identity == null) return Result.fail(404, "关联记录不存在");
+        if (!identity.getKbUserId().equals(userId)) return Result.fail(403, "只能解绑自己的账号关联");
+        identityMapper.deleteById(id);
+        log.info("解除关联: userId={}, platform={}, platformUid={}", userId, identity.getPlatform(), identity.getPlatformUid());
+        return Result.ok("解绑成功", null);
+    }
+
+    @Operation(summary = "准备关联账号", description = "为关联企业账号做准备，设置 Cookie 后前端跳转到 OAuth2 授权页")
+    @PostMapping("/prepare-link")
+    public Result<Void> prepareLink(@RequestBody Map<String, String> body,
+                                     HttpServletRequest servletRequest,
+                                     HttpServletResponse response) {
+        Long userId = (Long) servletRequest.getAttribute("userId");
+        String platform = body.get("platform");
+        if (platform == null || platform.isBlank()) return Result.badRequest("平台不能为空");
+        if (!java.util.Set.of("feishu", "dingtalk").contains(platform))
+            return Result.badRequest("不支持的平台");
+
+        String linkToken = java.util.UUID.randomUUID().toString().replace("-", "");
+        stringRedisTemplate.opsForValue().set("kb:link:" + linkToken,
+                userId + "\n" + platform, java.time.Duration.ofMinutes(5));
+
+        Cookie cookie = new Cookie("kb_link_token", linkToken);
+        cookie.setPath("/");
+        cookie.setHttpOnly(true);
+        cookie.setMaxAge(300);
+        cookie.setAttribute("SameSite", "Lax");
+        response.addCookie(cookie);
+
+        log.info("准备关联: userId={}, platform={}", userId, platform);
+        return Result.ok("success", null);
+    }
+
+    // ========== OIDC ==========
 
     @Operation(summary = "OIDC 提供商列表", description = "返回已启用的 OAuth2/OIDC 登录入口，供前端动态渲染登录按钮")
     @GetMapping("/oidc-providers")

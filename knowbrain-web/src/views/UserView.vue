@@ -85,8 +85,8 @@
           <el-form-item label="姓名">
             <el-input v-model="createForm.name" placeholder="显示名称，默认同用户名" maxlength="50" />
           </el-form-item>
-          <el-form-item label="手机号">
-            <el-input v-model="createForm.phone" placeholder="11 位手机号，选填" maxlength="11"
+          <el-form-item label="手机号" required>
+            <el-input v-model="createForm.phone" placeholder="请输入手机号" maxlength="11"
               @input="createForm.phone = filterPhoneInput(createForm.phone)" />
           </el-form-item>
           <el-form-item label="部门">
@@ -261,7 +261,8 @@ async function doCreate() {
   if (!f.username.trim()) return ElMessage.warning('请输入用户名')
   if (f.username.trim().length < 3) return ElMessage.warning('用户名至少 3 个字符')
   if (!f.password || f.password.length < 6) return ElMessage.warning('密码至少 6 位')
-  if (f.phone.trim() && !validPhone(f.phone.trim())) return ElMessage.warning('请输入正确的手机号')
+  if (!f.phone.trim()) return ElMessage.warning('请输入手机号')
+  if (!validPhone(f.phone.trim())) return ElMessage.warning('手机号格式不正确')
 
   submitting.value = true
   try {

@@ -77,6 +77,17 @@ public class UserService {
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, username)) > 0) {
             throw new BizException(400, "用户名已存在");
         }
+        // 手机号必填 + 格式 + 唯一性校验
+        if (phone == null || phone.isBlank()) {
+            throw new BizException(400, "手机号不能为空");
+        }
+        if (!phone.matches("^1[3-9]\\d{9}$")) {
+            throw new BizException(400, "手机号格式不正确");
+        }
+        if (userMapper.selectCount(
+                new LambdaQueryWrapper<SysUser>().eq(SysUser::getPhone, phone)) > 0) {
+            throw new BizException(400, "该手机号已被其他用户使用");
+        }
 
         SysUser user = new SysUser();
         user.setUsername(username);
@@ -103,7 +114,21 @@ public class UserService {
         if (updates.getDepartmentId() != null) user.setDepartmentId(updates.getDepartmentId());
         if (updates.getRole() != null) user.setRole(updates.getRole());
         if (updates.getName() != null) user.setName(updates.getName());
-        if (updates.getPhone() != null) user.setPhone(updates.getPhone());
+        if (updates.getPhone() != null) {
+            String phone = updates.getPhone();
+            if (!phone.isBlank()) {
+                if (!phone.matches("^1[3-9]\\d{9}$")) {
+                    throw new BizException(400, "手机号格式不正确");
+                }
+                if (userMapper.selectCount(
+                        new LambdaQueryWrapper<SysUser>()
+                                .eq(SysUser::getPhone, phone)
+                                .ne(SysUser::getId, id)) > 0) {
+                    throw new BizException(400, "该手机号已被其他用户使用");
+                }
+            }
+            user.setPhone(phone);
+        }
         if (updates.getStatus() != null) {
             user.setStatus(updates.getStatus());
             // 用户被禁用 → 立即作废所有现有 Token

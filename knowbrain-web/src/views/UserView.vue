@@ -118,7 +118,7 @@
             <el-input v-model="editForm.name" placeholder="显示名称" maxlength="50" />
           </el-form-item>
           <el-form-item label="手机号">
-            <el-input v-model="editForm.phone" placeholder="11 位手机号，选填" maxlength="11"
+            <el-input v-model="editForm.phone" placeholder="请输入手机号" maxlength="11"
               @input="editForm.phone = filterPhoneInput(editForm.phone)" />
           </el-form-item>
           <el-form-item label="部门">

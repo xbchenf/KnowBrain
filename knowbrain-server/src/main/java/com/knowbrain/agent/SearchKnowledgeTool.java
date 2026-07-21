@@ -15,6 +15,10 @@ import java.util.function.Function;
  * <p><b>结果缓存</b>：Agent 可能多次调用 searchKnowledge（针对不同子问题），
  * 每次结果都累积到 {@link #resultCache} 中，最终由 {@link #getCachedResults()}
  * 汇总为 ChatResponse 的 sources。
+ *
+ * <p><b>思考链事件</b>：每次 {@link #apply(Request)} 调用都会记录一条 "search"
+ * 类型的思考链事件（查询词 + 命中数），通过 {@link #getThinkingEvents()}
+ * 获取后用于前端思考链可视化。
  */
 public class SearchKnowledgeTool implements
         Function<SearchKnowledgeTool.Request, SearchKnowledgeTool.Response> {
@@ -49,6 +53,9 @@ public class SearchKnowledgeTool implements
     /** 记录 Agent 总共调用了多少次 searchKnowledge */
     private int callCount = 0;
 
+    /** 思考链事件 — 每次 searchKnowledge 调用记录一条，用于前端可视化 */
+    private final List<Map<String, Object>> thinkingEvents = new ArrayList<>();
+
     public SearchKnowledgeTool(HybridSearchService searchService,
                                List<Long> spaceIds, String category) {
         this.searchService = searchService;
@@ -80,6 +87,12 @@ public class SearchKnowledgeTool implements
             }
         }
 
+        // 记录思考链事件（查询词 + 命中数）
+        thinkingEvents.add(Map.of(
+                "type", "search",
+                "text", request.query(),
+                "hits", items.size()));
+
         return new Response(items, items.size());
     }
 
@@ -93,6 +106,11 @@ public class SearchKnowledgeTool implements
     /** Agent 总共调用了多少次 searchKnowledge */
     public int getCallCount() {
         return callCount;
+    }
+
+    /** 返回本次 Agent 会话的思考链事件，供前端可视化 */
+    public List<Map<String, Object>> getThinkingEvents() {
+        return new ArrayList<>(thinkingEvents);
     }
 
     // ==================== 内部方法 ====================

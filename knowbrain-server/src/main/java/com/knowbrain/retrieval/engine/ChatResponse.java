@@ -5,13 +5,13 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * RAG 问答响应
  */
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
 public class ChatResponse {
 
     /** LLM 生成的答案 */
@@ -25,6 +25,26 @@ public class ChatResponse {
 
     /** 置信度：high / medium / low */
     private String confidence;
+
+    /** 思考链事件（仅 Agent 模式下非空），用于前端可视化 */
+    private List<Map<String, Object>> thinkingEvents;
+
+    /** 完整构造函数（非 Agent 路径，thinkingEvents 默认为 null） */
+    public ChatResponse(String answer, List<SourceInfo> sources, boolean fallback, String confidence) {
+        this.answer = answer;
+        this.sources = sources;
+        this.fallback = fallback;
+        this.confidence = confidence;
+    }
+
+    public ChatResponse(String answer, List<SourceInfo> sources, boolean fallback, String confidence,
+                        List<Map<String, Object>> thinkingEvents) {
+        this.answer = answer;
+        this.sources = sources;
+        this.fallback = fallback;
+        this.confidence = confidence;
+        this.thinkingEvents = thinkingEvents;
+    }
 
     @Data
     @NoArgsConstructor

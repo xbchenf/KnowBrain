@@ -265,7 +265,8 @@ public class RAGServiceImpl implements RAGService {
                         : List.of();
                 return new StreamContext(
                         Flux.just(cached.getAnswer()),
-                        cachedSources, false, cached.getConfidence());
+                        cachedSources, false, cached.getConfidence(),
+                        List.of());
             }
         }
 
@@ -282,7 +283,8 @@ public class RAGServiceImpl implements RAGService {
             saveSearchLog(question, pre.faqAnswer(), 1, "high", true, spaceIds, category, (int)(System.currentTimeMillis() - startMs), null);
             return new StreamContext(
                     Flux.just(pre.faqAnswer()),
-                    List.of(faqSource), false, "high");
+                    List.of(faqSource), false, "high",
+                    List.of());
         }
 
         // 2.5 Agent 检索智能体分叉（FAQ 未命中时）
@@ -311,7 +313,8 @@ public class RAGServiceImpl implements RAGService {
             saveSearchLog(question, fallbackMsg, 0, "low", false, spaceIds, category, (int)(System.currentTimeMillis() - startMs), null);
             return new StreamContext(
                     Flux.just(fallbackMsg),
-                    Collections.emptyList(), true, "low");
+                    Collections.emptyList(), true, "low",
+                    List.of());
         }
 
         // 5. 拼接上下文
@@ -352,7 +355,7 @@ public class RAGServiceImpl implements RAGService {
         // 记录搜索日志（流式场景下答案尚未生成，记录检索阶段信息）
         saveSearchLog(question, null, sources.size(), confidence, false, spaceIds, category, (int)(System.currentTimeMillis() - startMs), collectSourceTitles(sources));
 
-        return new StreamContext(tokenFlux, effectiveSources, false, confidence);
+        return new StreamContext(tokenFlux, effectiveSources, false, confidence, List.of());
     }
 
     @Override
@@ -571,6 +574,13 @@ public class RAGServiceImpl implements RAGService {
         String systemPrompt = loadResource(agentPromptTemplate);
         String userPrompt = buildAgentUserPrompt(question, history, pre.rewrittenQuery());
 
+        // 思考链：问题分析（关键词分类，零延迟）
+        List<Map<String, Object>> thinkingEvents = new ArrayList<>();
+        thinkingEvents.add(Map.of(
+                "type", "analyze",
+                "text", classifyQuestionForThinking(question)
+        ));
+
         log.info("[Agent] 检索开始 question=\"{}\" rewritten=\"{}\"", question, pre.rewrittenQuery());
 
         // 3. 调用 LLM（带 Function Calling，Spring AI 自动处理 Tool Loop）
@@ -589,6 +599,15 @@ public class RAGServiceImpl implements RAGService {
             log.warn("[Agent] 调用失败，降级到标准 RAG 管线: {}", e.getMessage());
             return fallbackToStandardPipeline(question, spaceIds, history, category);
         }
+
+        // 提取搜索阶段的思考链事件 + 追加汇总事件
+        thinkingEvents.addAll(searchTool.getThinkingEvents());
+        thinkingEvents.add(Map.of(
+                "type", "synthesize",
+                "text", searchTool.getCachedResults().isEmpty()
+                        ? "未找到相关信息"
+                        : "信息检索完成，开始生成回答..."
+        ));
 
         // 4. 汇总 Agent 多次搜索累积的文档
         List<SearchResult> allSources = searchTool.getCachedResults();
@@ -609,7 +628,7 @@ public class RAGServiceImpl implements RAGService {
         }
 
         ChatResponse response = new ChatResponse(answer, sourceInfos,
-                allSources.isEmpty(), confidence);
+                allSources.isEmpty(), confidence, thinkingEvents);
 
         // 7. 写入搜索日志
         int total = (int) (System.currentTimeMillis() - tStart);
@@ -642,6 +661,13 @@ public class RAGServiceImpl implements RAGService {
         String systemPrompt = loadResource(agentPromptTemplate);
         String userPrompt = buildAgentUserPrompt(question, history, pre.rewrittenQuery());
 
+        // 思考链：问题分析（关键词分类，零延迟）
+        List<Map<String, Object>> thinkingEvents = new ArrayList<>();
+        thinkingEvents.add(Map.of(
+                "type", "analyze",
+                "text", classifyQuestionForThinking(question)
+        ));
+
         log.info("[AgentStream] 检索开始 question=\"{}\" rewritten=\"{}\"", question, pre.rewrittenQuery());
 
         // 3. Agent 多步检索（非流式，含 Function Calling 工具循环）
@@ -660,6 +686,15 @@ public class RAGServiceImpl implements RAGService {
             log.warn("[AgentStream] 调用失败，降级到标准流式管线: {}", e.getMessage());
             return null; // 通知调用方降级
         }
+
+        // 提取搜索阶段的思考链事件 + 追加汇总事件
+        thinkingEvents.addAll(searchTool.getThinkingEvents());
+        thinkingEvents.add(Map.of(
+                "type", "synthesize",
+                "text", searchTool.getCachedResults().isEmpty()
+                        ? "未找到相关信息"
+                        : "信息检索完成，开始生成回答..."
+        ));
 
         // 4. 汇总搜索结果 + 评估置信度
         List<SearchResult> allSources = searchTool.getCachedResults();
@@ -684,7 +719,8 @@ public class RAGServiceImpl implements RAGService {
         // 7. 返回 StreamContext — 整个答案作为单个 Flux 元素
         return new StreamContext(
                 Flux.just(finalAnswer),
-                effectiveSources, fallback, confidence);
+                effectiveSources, fallback, confidence,
+                thinkingEvents);
     }
 
     /**
@@ -782,6 +818,34 @@ public class RAGServiceImpl implements RAGService {
             sb.append("\n（问题改写：").append(rewrittenQuery).append("）");
         }
         return sb.toString();
+    }
+
+    /**
+     * 快速问题分类（关键词匹配），为思考链的第一个事件（analyze）生成描述文本。
+     * 不需要调用 LLM，零额外延迟。
+     */
+    private String classifyQuestionForThinking(String question) {
+        if (question == null || question.isBlank()) {
+            return "正在分析您的问题...";
+        }
+        // 对比类
+        for (String kw : List.of("区别", "对比", "比较", "不同", "差异", "vs", "哪个")) {
+            if (question.contains(kw)) return "这是一个对比类问题，需要分别检索各方的相关信息";
+        }
+        // 操作/配置类
+        for (String kw : List.of("怎么", "如何", "怎样", "步骤", "流程", "配置", "设置", "安装", "部署")) {
+            if (question.contains(kw)) return "这是一个操作指引问题，正在检索相关步骤和文档";
+        }
+        // 原因/解释类
+        for (String kw : List.of("为什么", "原因", "原理", "机制")) {
+            if (question.contains(kw)) return "正在分析问题原因，检索相关知识...";
+        }
+        // 摘要/概括类
+        for (String kw : List.of("总结", "概述", "介绍", "汇总", "归纳", "整理")) {
+            if (question.contains(kw)) return "正在汇总相关知识，为您整理要点...";
+        }
+        // 默认
+        return "正在分析您的问题，检索相关知识...";
     }
 
 }

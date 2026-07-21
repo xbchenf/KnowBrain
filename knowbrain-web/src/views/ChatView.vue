@@ -39,6 +39,16 @@
               </svg>
             </div>
             <div class="msg-ai-content">
+              <!-- 思考链可视化 -->
+              <div v-if="msg.thinkingSteps && msg.thinkingSteps.length" class="thinking-chain">
+                <div class="thinking-steps">
+                  <div v-for="(step, si) in msg.thinkingSteps" :key="si" class="thinking-step">
+                    <span class="thinking-step-icon">{{ stepIcon(step.type) }}</span>
+                    <span class="thinking-step-text">{{ step.text }}</span>
+                    <span v-if="step.hits !== undefined" class="thinking-step-hits">→ {{ step.hits }} 篇</span>
+                  </div>
+                </div>
+              </div>
               <div class="msg-ai-text" v-html="formatAnswer(msg.content)"></div>
               <span v-if="loading && i === messages.length - 1 && msg.role === 'assistant'" class="cursor-blink">|</span>
 
@@ -170,7 +180,13 @@
 
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
-import { chatWithKnowledgeStream, submitFeedback, listPublicCategories, listPublicFaq, listSpaces, type HistoryMessage } from '../api'
+import { chatWithKnowledgeStream, submitFeedback, listPublicCategories, listPublicFaq, listSpaces, type HistoryMessage, type ThinkingEvent } from '../api'
+
+interface ThinkingStep {
+  type: 'analyze' | 'search' | 'synthesize'
+  text: string
+  hits?: number
+}
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
@@ -179,6 +195,7 @@ interface Message {
   confidence?: string
   fallback?: boolean
   feedback?: string
+  thinkingSteps?: ThinkingStep[]
 }
 
 const defaultSuggestions = [
@@ -257,6 +274,10 @@ async function send() {
   const spaceIds = selectedSpaceIds.value.length ? selectedSpaceIds.value : undefined
 
   await chatWithKnowledgeStream(question, {
+    onThinking(event: ThinkingEvent) {
+      if (!aiMsg.thinkingSteps) aiMsg.thinkingSteps = []
+      aiMsg.thinkingSteps.push(event)
+    },
     onToken(token: string) {
       aiMsg.content += token
       scrollToBottom()
@@ -299,6 +320,15 @@ function formatAnswer(text: string): string {
 
 function confidenceLabel(level: string): string {
   return level === 'high' ? '高置信度' : level === 'medium' ? '中置信度' : '低置信度'
+}
+
+function stepIcon(type: string): string {
+  switch (type) {
+    case 'analyze': return '🤔'
+    case 'search': return '🔍'
+    case 'synthesize': return '✅'
+    default: return '💭'
+  }
 }
 
 async function scrollToBottom() {
@@ -372,6 +402,20 @@ defineExpose({ addSystemMessage })
 .thinking-dots span:nth-child(2) { animation-delay: .2s; }
 .thinking-dots span:nth-child(3) { animation-delay: .4s; }
 @keyframes dotPulse { 0%,60%,100% { opacity: .3; } 30% { opacity: 1; } }
+
+/* ===== 思考链 ===== */
+.thinking-chain {
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #faf5ff 100%);
+  border: 1px solid #e0e7ff;
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.thinking-steps { display: flex; flex-direction: column; gap: 8px; }
+.thinking-step { display: flex; align-items: baseline; gap: 6px; line-height: 1.5; }
+.thinking-step-icon { flex-shrink: 0; font-size: 14px; }
+.thinking-step-text { font-size: 13px; color: #374151; }
+.thinking-step-hits { font-size: 12px; color: #6b7280; white-space: nowrap; }
 
 /* ===== 降级提示 ===== */
 .fallback-badge {

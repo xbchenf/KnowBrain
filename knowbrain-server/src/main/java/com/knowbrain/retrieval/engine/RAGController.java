@@ -72,10 +72,11 @@ public class RAGController {
      * RAG 流式问答（SSE）— token 逐字推送 + 溯源元数据
      *
      * SSE 事件类型：
-     * - token   : LLM 生成文本片段（逐字/逐词）
-     * - sources : 检索溯源列表（JSON 数组）
-     * - done    : 完成信号，包含 confidence / fallback
-     * - error   : 异常信号
+     * - thinking : Agent 思考链（analyze / search / synthesize，token 流之前）
+     * - token    : LLM 生成文本片段（逐字/逐词）
+     * - sources  : 检索溯源列表（JSON 数组）
+     * - done     : 完成信号，包含 confidence / fallback
+     * - error    : 异常信号
      */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody Map<String, Object> body,
@@ -100,6 +101,21 @@ public class RAGController {
                 StreamContext ctx = ragService.chatStream(question, spaceIds, history, category);
                 log.info("SSE: StreamContext 就绪 sources={} fallback={}", ctx.sources().size(), ctx.fallback());
                 Flux<String> tokens = ctx.tokens();
+
+                // 推送思考链事件（Agent 模式下有值，非 Agent 模式为空列表）
+                List<Map<String, Object>> thinkingEvents = ctx.thinkingEvents();
+                if (thinkingEvents != null && !thinkingEvents.isEmpty()) {
+                    for (Map<String, Object> event : thinkingEvents) {
+                        try {
+                            emitter.send(SseEmitter.event()
+                                    .name("thinking")
+                                    .data(event));
+                        } catch (Exception ex) {
+                            log.warn("SSE thinking 事件推送失败: {}", ex.getMessage());
+                        }
+                    }
+                    log.debug("SSE: thinking 链已推送 events={}", thinkingEvents.size());
+                }
 
                 // 逐 token 推送
                 tokens.doOnNext(token -> {

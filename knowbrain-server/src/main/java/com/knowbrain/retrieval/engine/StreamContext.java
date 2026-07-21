@@ -3,6 +3,7 @@ package com.knowbrain.retrieval.engine;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 流式问答上下文 — 包含 token 流 + 检索结果
@@ -18,5 +19,7 @@ public record StreamContext(
         /** 是否触发兜底 */
         boolean fallback,
         /** 置信度 */
-        String confidence
+        String confidence,
+        /** 思考链事件（仅 Agent 模式下非空），用于前端可视化 */
+        List<Map<String, Object>> thinkingEvents
 ) {}

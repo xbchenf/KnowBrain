@@ -279,6 +279,13 @@ export interface HistoryMessage {
   content: string
 }
 
+/** 思考链事件 */
+export interface ThinkingEvent {
+  type: 'analyze' | 'search' | 'synthesize'
+  text: string
+  hits?: number
+}
+
 /** RAG 问答（带可选对话历史） */
 export function chatWithKnowledge(question: string, history?: HistoryMessage[]) {
   return api.post('/rag/chat', { question, history: history || [] })
@@ -291,6 +298,7 @@ export async function chatWithKnowledgeStream(
   question: string,
   callbacks: {
     onToken: (token: string) => void
+    onThinking: (event: ThinkingEvent) => void
     onSources: (sources: any[]) => void
     onDone: (meta: { confidence: string; fallback: boolean }) => void
     onError: (message: string) => void
@@ -359,6 +367,10 @@ export async function chatWithKnowledgeStream(
               } catch {
                 callbacks.onDone({ confidence: 'low', fallback: false })
               }
+            } else if (eventType === 'thinking') {
+              try {
+                callbacks.onThinking(JSON.parse(data))
+              } catch { /* ignore parse errors */ }
             } else if (eventType === 'error') {
               streamEndedNormally = true
               callbacks.onError(data)

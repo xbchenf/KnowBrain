@@ -6,10 +6,12 @@ import com.knowbrain.common.RAGMetrics;
 import com.knowbrain.common.RequestContext;
 import com.knowbrain.statistics.SearchLog;
 import com.knowbrain.statistics.SearchLogMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.model.function.FunctionCallback;
+import org.springframework.ai.chat.messages.*;
+import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.io.Resource;
@@ -19,11 +21,15 @@ import org.springframework.stereotype.Service;
 
 import io.micrometer.core.instrument.Timer;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -263,7 +269,7 @@ public class RAGServiceImpl implements RAGService {
                                     s.getDocumentId(), s.getChunkIndex(), 1.0))
                             .toList()
                         : List.of();
-                return new StreamContext(
+                return StreamContext.of(
                         Flux.just(cached.getAnswer()),
                         cachedSources, false, cached.getConfidence(),
                         List.of());
@@ -273,6 +279,9 @@ public class RAGServiceImpl implements RAGService {
         // 1. 预处理
         QueryPreprocessor.Result pre = preprocessor.preprocess(question);
 
+        // 思考链事件容器：Agent 失败时也能将 "analyze" + "降级" 事件传递到标准管线的 StreamContext
+        List<Map<String, Object>> thinkingEvents = new ArrayList<>();
+
         // 2. FAQ 命中 → 短路返回预设答案，附虚拟溯源
         if (pre.isFaqMatched()) {
             metrics.recordFaqHit();
@@ -281,21 +290,18 @@ public class RAGServiceImpl implements RAGService {
                     pre.faqQuestion() + " — 该回答来自知识库预设的高频问答，由人工维护更新",
                     "📋 知识库预设问答", null, null, 1.0);
             saveSearchLog(question, pre.faqAnswer(), 1, "high", true, spaceIds, category, (int)(System.currentTimeMillis() - startMs), null);
-            return new StreamContext(
+            return StreamContext.of(
                     Flux.just(pre.faqAnswer()),
                     List.of(faqSource), false, "high",
-                    List.of());
+                    thinkingEvents);
         }
 
         // 2.5 Agent 检索智能体分叉（FAQ 未命中时）
-        //      先尝试 Agent 多步检索，失败则降级到标准流式管线
+        //      手动 Tool Calling 循环在 thinkingFlux 内部执行，
+        //      失败由 Flux 自身通过 onError 降级处理，不再返回 null
         if (agentEnabled) {
-            StreamContext agentResult = agentChatStream(question, spaceIds, history, category,
-                    pre, startMs, requestSample);
-            if (agentResult != null) {
-                return agentResult;
-            }
-            // Agent 失败 → 继续走标准流式管线（降级）
+            return agentChatStream(question, spaceIds, history, category,
+                    pre, startMs, requestSample, thinkingEvents);
         }
 
         String processed = pre.rewrittenQuery();
@@ -311,10 +317,10 @@ public class RAGServiceImpl implements RAGService {
             requestSample.stop(metrics.requestTimer());
             String fallbackMsg = "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。";
             saveSearchLog(question, fallbackMsg, 0, "low", false, spaceIds, category, (int)(System.currentTimeMillis() - startMs), null);
-            return new StreamContext(
+            return StreamContext.of(
                     Flux.just(fallbackMsg),
                     Collections.emptyList(), true, "low",
-                    List.of());
+                    thinkingEvents);
         }
 
         // 5. 拼接上下文
@@ -355,7 +361,7 @@ public class RAGServiceImpl implements RAGService {
         // 记录搜索日志（流式场景下答案尚未生成，记录检索阶段信息）
         saveSearchLog(question, null, sources.size(), confidence, false, spaceIds, category, (int)(System.currentTimeMillis() - startMs), collectSourceTitles(sources));
 
-        return new StreamContext(tokenFlux, effectiveSources, false, confidence, List.of());
+        return StreamContext.of(tokenFlux, effectiveSources, false, confidence, thinkingEvents);
     }
 
     @Override
@@ -589,15 +595,20 @@ public class RAGServiceImpl implements RAGService {
             answer = chatClient.prompt()
                     .system(systemPrompt)
                     .user(userPrompt)
-                    .functions(FunctionCallback.builder()
-                            .function("searchKnowledge", searchTool)
+                    .toolCallbacks(FunctionToolCallback.builder("searchKnowledge", searchTool)
                             .inputType(SearchKnowledgeTool.Request.class)
                             .build())
                     .call()
                     .content();
         } catch (Exception e) {
             log.warn("[Agent] 调用失败，降级到标准 RAG 管线: {}", e.getMessage());
-            return fallbackToStandardPipeline(question, spaceIds, history, category);
+            thinkingEvents.add(Map.of(
+                    "type", "synthesize",
+                    "text", "Agent 检索超时，已切换至标准检索模式"
+            ));
+            ChatResponse fallback = fallbackToStandardPipeline(question, spaceIds, history, category);
+            fallback.setThinkingEvents(thinkingEvents);
+            return fallback;
         }
 
         // 提取搜索阶段的思考链事件 + 追加汇总事件
@@ -642,17 +653,20 @@ public class RAGServiceImpl implements RAGService {
     }
 
     /**
-     * Agent 流式模式：LLM 多步检索（非流式 Function Calling）+ Flux 包装结果。
+     * Agent 流式模式 — 用 Function 包装器实现实时思考链推送。
      *
-     * <p>与 {@link #agentChat} 的区别：返回 {@link StreamContext} 而非 {@link ChatResponse}，
-     * 浏览器端仍能收到 SSE 事件（只是无打字动画——整个答案作为一个 token 推送）。
+     * <p><b>关键设计</b>：将 searchTool.apply() 包装在一个新 Function 中，
+     * 执行检索后立即调用 {@code sink.next(searchEvent)}。
+     * Spring AI 的 ToolCallingManager 每次调用 searchKnowledge 都会触发此包装函数，
+     * 前端立即收到搜索事件——消除黑盒批量返回的死寂空白期。
      *
-     * <p>返回 null 表示 Agent 调用失败，调用方应降级到标准流式管线。
+     * <p>与业界标准体验一致：分析 → 搜索1 ↗ 搜索2 ↗ → 合成 → 答案流式输出。
      */
     private StreamContext agentChatStream(String question, List<Long> spaceIds,
                                           List<Map<String, String>> history,
                                           String category, QueryPreprocessor.Result pre,
-                                          long startMs, Timer.Sample requestSample) {
+                                          long startMs, Timer.Sample requestSample,
+                                          List<Map<String, Object>> thinkingEvents) {
         // 1. 创建本次请求的检索工具
         var searchTool = new SearchKnowledgeTool(
                 hybridSearchService, spaceIds, category);
@@ -661,66 +675,143 @@ public class RAGServiceImpl implements RAGService {
         String systemPrompt = loadResource(agentPromptTemplate);
         String userPrompt = buildAgentUserPrompt(question, history, pre.rewrittenQuery());
 
-        // 思考链：问题分析（关键词分类，零延迟）
-        List<Map<String, Object>> thinkingEvents = new ArrayList<>();
-        thinkingEvents.add(Map.of(
-                "type", "analyze",
-                "text", classifyQuestionForThinking(question)
-        ));
-
         log.info("[AgentStream] 检索开始 question=\"{}\" rewritten=\"{}\"", question, pre.rewrittenQuery());
 
-        // 3. Agent 多步检索（非流式，含 Function Calling 工具循环）
-        String answer;
+        // 容器变量
+        var finalAnswerRef = new AtomicReference<String>();
+        var allSourcesRef = new AtomicReference<List<SearchResult>>();
+        var agentFailed = new AtomicBoolean(false);
+
+        // 3. 思考链实时 Flux — 包装 Function 在工具执行瞬间推送事件
+        Flux<Map<String, Object>> thinkingFlux = Flux.create(sink -> {
+            try {
+                // 3a. 推送 analyze 事件（零延迟，LLM 调用前立即发送）
+                sink.next(Map.of(
+                        "type", "analyze",
+                        "text", classifyQuestionForThinking(question)
+                ));
+
+                // 3b. ★ 核心：创建包装 Function，在 searchTool.apply() 之后立即推送 thinking 事件
+                //       Spring AI 每调用一次 searchKnowledge 就触发一次该函数 → sink.next() → 实时 SSE
+                Function<SearchKnowledgeTool.Request, SearchKnowledgeTool.Response> wrappedFunction = req -> {
+                    var resp = searchTool.apply(req);
+                    // 从 Spring AI 工具执行线程内直接推送 → 浏览器实时收到 SSE
+                    sink.next(Map.of(
+                            "type", "search",
+                            "text", req.query(),
+                            "hits", resp.totalHits()));
+                    return resp;
+                };
+
+                // 3c. 构建包装后的工具回调并调用 LLM
+                //      Spring AI 黑盒自动循环 Tool Calling，
+                //      每次工具执行 → wrappedFunction → sink.next(search) → 实时前端
+                String answer = chatClient.prompt()
+                        .system(systemPrompt)
+                        .user(userPrompt)
+                        .toolCallbacks(FunctionToolCallback
+                                .builder("searchKnowledge", wrappedFunction)
+                                .inputType(SearchKnowledgeTool.Request.class)
+                                .build())
+                        .call()
+                        .content();
+
+                finalAnswerRef.set(answer);
+                List<SearchResult> sources = searchTool.getCachedResults();
+                allSourcesRef.set(sources);
+
+                // 3d. 推送 synthesize 事件
+                sink.next(Map.of(
+                        "type", "synthesize",
+                        "text", sources.isEmpty()
+                                ? "未找到相关信息"
+                                : "信息检索完成，开始生成回答..."
+                ));
+
+                sink.complete();
+                log.info("[AgentStream] 实时推送完成 searchCalls={} sources={}",
+                        searchTool.getCallCount(), sources.size());
+
+            } catch (Exception e) {
+                log.warn("[AgentStream] Agent 循环失败: {}", e.getMessage());
+                agentFailed.set(true);
+                try {
+                    sink.next(Map.of(
+                            "type", "synthesize",
+                            "text", "Agent 检索超时，已切换至标准检索模式"
+                    ));
+                } catch (Exception ignored) {}
+                sink.error(e);
+            }
+        });
+
+        // 4. Token Flux — 延迟到 thinkingFlux 完成后取值
+        Flux<String> tokenFlux = Flux.defer(() -> {
+            if (agentFailed.get()) return Flux.empty();
+            String answer = finalAnswerRef.get();
+            if (answer == null || answer.isBlank()) {
+                return Flux.just("未找到与您问题相关的文档，请尝试换个问法或补充更多文档。");
+            }
+            return Flux.just(answer);
+        });
+
+        // 5. thinkingFlux 完成后的指标记录
+        thinkingFlux = thinkingFlux.doOnComplete(() -> {
+            if (!agentFailed.get()) {
+                List<SearchResult> sources = allSourcesRef.get();
+                if (sources == null) sources = List.of();
+                String confidence = evaluateConfidence(sources, finalAnswerRef.get());
+                metrics.recordSuccess();
+                requestSample.stop(metrics.requestTimer());
+                int total = (int) (System.currentTimeMillis() - startMs);
+                saveSearchLog(question, finalAnswerRef.get(), sources.size(), confidence,
+                        false, spaceIds, category, total, collectSourceTitles(sources));
+            }
+        });
+
+        // 6. Agent 路径的 sources 由异步循环计算，通过 Supplier 延迟获取
+        return StreamContext.agent(
+                tokenFlux,
+                () -> agentFailed.get() ? List.of() : Objects.requireNonNullElse(allSourcesRef.get(), List.of()),
+                false, "low",
+                thinkingFlux);
+    }
+
+    // ==================== Agent 辅助方法 ====================
+
+    /** JSON 解析器（解析 LLM 返回的工具调用参数为 SearchKnowledgeTool.Request） */
+    private static final ObjectMapper TOOL_MAPPER = new ObjectMapper();
+
+    /**
+     * 解析 LLM 工具调用的 JSON 参数为 {@link SearchKnowledgeTool.Request}。
+     * LLM 传递的 arguments 格式: {@code {"query": "搜索词"}}
+     */
+    private SearchKnowledgeTool.Request parseToolRequest(String argumentsJson) {
         try {
-            answer = chatClient.prompt()
-                    .system(systemPrompt)
-                    .user(userPrompt)
-                    .functions(FunctionCallback.builder()
-                            .function("searchKnowledge", searchTool)
-                            .inputType(SearchKnowledgeTool.Request.class)
-                            .build())
-                    .call()
-                    .content();
+            return TOOL_MAPPER.readValue(argumentsJson, SearchKnowledgeTool.Request.class);
         } catch (Exception e) {
-            log.warn("[AgentStream] 调用失败，降级到标准流式管线: {}", e.getMessage());
-            return null; // 通知调用方降级
+            // 降级：直接提取 JSON 中第一个字符串值作为 query
+            log.warn("[AgentStream] 工具参数 JSON 解析失败，使用原始文本: {}", argumentsJson);
+            return new SearchKnowledgeTool.Request(
+                    argumentsJson != null ? argumentsJson.replaceAll("[\"{}]", "").trim() : "");
         }
+    }
 
-        // 提取搜索阶段的思考链事件 + 追加汇总事件
-        thinkingEvents.addAll(searchTool.getThinkingEvents());
-        thinkingEvents.add(Map.of(
-                "type", "synthesize",
-                "text", searchTool.getCachedResults().isEmpty()
-                        ? "未找到相关信息"
-                        : "信息检索完成，开始生成回答..."
-        ));
-
-        // 4. 汇总搜索结果 + 评估置信度
-        List<SearchResult> allSources = searchTool.getCachedResults();
-        String confidence = evaluateConfidence(allSources, answer);
-        List<SearchResult> effectiveSources = "low".equals(confidence) ? List.of() : allSources;
-
-        // 5. 兜底处理
-        boolean fallback = allSources.isEmpty() || answer == null || answer.isBlank();
-        String finalAnswer = (!fallback) ? answer
-                : "未找到与您问题相关的文档，请尝试换个问法或补充更多文档。";
-
-        // 6. 记录指标和日志
-        metrics.recordSuccess();
-        requestSample.stop(metrics.requestTimer());
-        int total = (int) (System.currentTimeMillis() - startMs);
-        saveSearchLog(question, answer, allSources.size(), confidence,
-                false, spaceIds, category, total, collectSourceTitles(allSources));
-
-        log.info("[AgentStream] 检索完成 total={}ms searchCalls={} uniqueChunks={} confidence={} fallback={} question=\"{}\"",
-                total, searchTool.getCallCount(), allSources.size(), confidence, fallback, question);
-
-        // 7. 返回 StreamContext — 整个答案作为单个 Flux 元素
-        return new StreamContext(
-                Flux.just(finalAnswer),
-                effectiveSources, fallback, confidence,
-                thinkingEvents);
+    /**
+     * 将工具执行结果序列化为 LLM 可读的文本，返回给模型做下一步决策。
+     */
+    private String formatToolResult(SearchKnowledgeTool.Response result) {
+        if (result.results() == null || result.results().isEmpty()) {
+            return "检索到 " + result.totalHits() + " 条结果（无详情）";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("检索到 ").append(result.totalHits()).append(" 条结果:\n");
+        for (int i = 0; i < result.results().size(); i++) {
+            var item = result.results().get(i);
+            sb.append("[").append(i + 1).append("] ").append(item.title()).append("\n");
+            sb.append(item.text()).append("\n\n");
+        }
+        return sb.toString().trim();
     }
 
     /**

@@ -403,14 +403,21 @@ public class EvaluationService {
 
     /**
      * 创建独立 Judge ChatClient（temperature=0.0 确保确定性输出）
+     * Spring AI 1.0.x 采用 Builder 模式构造 OpenAiApi / OpenAiChatModel
      */
     private ChatClient createJudgeClient(EvaluationJudgeConfig config) {
-        OpenAiApi api = new OpenAiApi(config.getBaseUrl(), config.getApiKey());
-        OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .withModel(config.getModel())
-                .withTemperature(0.0)
+        OpenAiApi api = OpenAiApi.builder()
+                .baseUrl(config.getBaseUrl())
+                .apiKey(config.getApiKey())
                 .build();
-        OpenAiChatModel chatModel = new OpenAiChatModel(api, options);
+        OpenAiChatOptions options = OpenAiChatOptions.builder()
+                .model(config.getModel())
+                .temperature(0.0)
+                .build();
+        OpenAiChatModel chatModel = OpenAiChatModel.builder()
+                .openAiApi(api)
+                .defaultOptions(options)
+                .build();
         return ChatClient.builder(chatModel).build();
     }
 

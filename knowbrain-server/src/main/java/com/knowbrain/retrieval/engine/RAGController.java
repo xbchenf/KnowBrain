@@ -102,58 +102,83 @@ public class RAGController {
                 log.info("SSE: StreamContext 就绪 sources={} fallback={}", ctx.sources().size(), ctx.fallback());
                 Flux<String> tokens = ctx.tokens();
 
-                // 推送思考链事件（Agent 模式下有值，非 Agent 模式为空列表）
-                List<Map<String, Object>> thinkingEvents = ctx.thinkingEvents();
-                if (thinkingEvents != null && !thinkingEvents.isEmpty()) {
-                    for (Map<String, Object> event : thinkingEvents) {
-                        try {
-                            emitter.send(SseEmitter.event()
-                                    .name("thinking")
-                                    .data(event));
-                        } catch (Exception ex) {
-                            log.warn("SSE thinking 事件推送失败: {}", ex.getMessage());
-                        }
-                    }
-                    log.debug("SSE: thinking 链已推送 events={}", thinkingEvents.size());
-                }
-
-                // 逐 token 推送
-                tokens.doOnNext(token -> {
-                    try {
-                        emitter.send(SseEmitter.event().name("token").data(token));
-                    } catch (Exception e) {
-                        log.warn("SSE token 推送失败: {}", e.getMessage());
-                    }
-                }).doOnComplete(() -> {
-                    log.info("SSE: token 流完成，推送元数据");
-                    try {
-                        // 推送溯源列表
-                        emitter.send(SseEmitter.event()
-                                .name("sources")
-                                .data(ctx.sources()));
-                        // 推送完成信号
-                        Map<String, Object> done = Map.of(
-                                "confidence", ctx.confidence(),
-                                "fallback", ctx.fallback()
-                        );
-                        emitter.send(SseEmitter.event()
-                                .name("done")
-                                .data(done));
-                        emitter.complete();
-                        log.info("SSE: 流式问答完成");
-                    } catch (Exception e) {
-                        log.error("SSE 元数据推送失败", e);
-                        emitter.completeWithError(e);
-                    }
-                }).doOnError(e -> {
-                    log.error("LLM 流式调用异常", e);
-                    try {
-                        emitter.send(SseEmitter.event()
-                                .name("error")
-                                .data("服务暂时不可用，请稍后重试。"));
-                    } catch (Exception ignored) {}
-                    emitter.completeWithError(e);
-                }).subscribe();
+                // ★ 订阅思考链 Flux（Agent 模式下为实时流，非 Agent 模式为空 Flux）
+                //    思考链完成后自动订阅 token 流，形成"思考 → 回答"的流水线
+                ctx.thinkingFlux()
+                        .doOnNext(event -> {
+                            try {
+                                emitter.send(SseEmitter.event()
+                                        .name("thinking")
+                                        .data(event));
+                                log.debug("SSE: thinking 事件已推送 type={}", event.get("type"));
+                            } catch (Exception ex) {
+                                log.warn("SSE thinking 事件推送失败: {}", ex.getMessage());
+                            }
+                        })
+                        .doOnComplete(() -> {
+                            log.info("SSE: thinkingFlux 完成，开始订阅 token 流");
+                            // 思考链完成 → 订阅 token 流
+                            ctx.tokens().doOnNext(token -> {
+                                try {
+                                    emitter.send(SseEmitter.event().name("token").data(token));
+                                } catch (Exception e) {
+                                    log.warn("SSE token 推送失败: {}", e.getMessage());
+                                }
+                            }).doOnComplete(() -> {
+                                log.info("SSE: token 流完成，推送元数据");
+                                try {
+                                    // 推送溯源列表（Agent 路径通过 Supplier 延迟计算）
+                                    List<SearchResult> sources = ctx.sources();
+                                    emitter.send(SseEmitter.event()
+                                            .name("sources")
+                                            .data(sources != null ? sources : List.of()));
+                                    // 推送完成信号
+                                    Map<String, Object> done = Map.of(
+                                            "confidence", ctx.confidence(),
+                                            "fallback", ctx.fallback()
+                                    );
+                                    emitter.send(SseEmitter.event()
+                                            .name("done")
+                                            .data(done));
+                                    emitter.complete();
+                                    log.info("SSE: 流式问答完成");
+                                } catch (Exception e) {
+                                    log.error("SSE 元数据推送失败", e);
+                                    emitter.completeWithError(e);
+                                }
+                            }).doOnError(e -> {
+                                log.error("LLM 流式调用异常", e);
+                                try {
+                                    emitter.send(SseEmitter.event()
+                                            .name("error")
+                                            .data("服务暂时不可用，请稍后重试。"));
+                                } catch (Exception ignored) {}
+                                emitter.completeWithError(e);
+                            }).subscribe();
+                        })
+                        .doOnError(e -> {
+                            log.warn("SSE: thinkingFlux 异常，仍尝试订阅 token 流: {}", e.getMessage());
+                            // Agent 思考链异常时仍尝试推送 token 流（降级回答）
+                            ctx.tokens().doOnNext(token -> {
+                                try {
+                                    emitter.send(SseEmitter.event().name("token").data(token));
+                                } catch (Exception ex) {
+                                    log.warn("SSE token 推送失败: {}", ex.getMessage());
+                                }
+                            }).doOnComplete(() -> {
+                                try {
+                                    Map<String, Object> done = Map.of(
+                                            "confidence", "low",
+                                            "fallback", true
+                                    );
+                                    emitter.send(SseEmitter.event().name("done").data(done));
+                                    emitter.complete();
+                                } catch (Exception ex) {
+                                    emitter.completeWithError(ex);
+                                }
+                            }).doOnError(ex -> emitter.completeWithError(ex)).subscribe();
+                        })
+                        .subscribe();
 
             } catch (Exception e) {
                 log.error("流式问答初始化失败", e);

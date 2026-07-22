@@ -273,17 +273,23 @@ async function send() {
   const category = selectedCategory.value || undefined
   const spaceIds = selectedSpaceIds.value.length ? selectedSpaceIds.value : undefined
 
+  // 获取数组中最后一个消息的响应式代理（而非原始对象 aiMsg）
+  const getLatestAi = () => messages.value[messages.value.length - 1]
+
   await chatWithKnowledgeStream(question, {
     onThinking(event: ThinkingEvent) {
-      if (!aiMsg.thinkingSteps) aiMsg.thinkingSteps = []
-      aiMsg.thinkingSteps.push(event)
+      const latest = getLatestAi()
+      if (!latest.thinkingSteps) latest.thinkingSteps = []
+      latest.thinkingSteps.push(event)
     },
     onToken(token: string) {
-      aiMsg.content += token
+      const latest = getLatestAi()
+      latest.content += token
       scrollToBottom()
     },
     onSources(sources: any[]) {
-      aiMsg.sources = sources.map((s: any) => ({
+      const latest = getLatestAi()
+      latest.sources = sources.map((s: any) => ({
         title: s.documentTitle || s.title || '',
         documentId: s.documentId || 0,
         chunkIndex: s.chunkIndex ?? 0,
@@ -291,15 +297,17 @@ async function send() {
       }))
     },
     onDone(meta: { confidence: string; fallback: boolean }) {
-      aiMsg.confidence = meta.confidence || 'low'
-      aiMsg.fallback = meta.fallback || false
-      if (!aiMsg.content) aiMsg.content = '未能生成回答，请重试。'
+      const latest = getLatestAi()
+      latest.confidence = meta.confidence || 'low'
+      latest.fallback = meta.fallback || false
+      if (!latest.content) latest.content = '未能生成回答，请重试。'
       loading.value = false
       scrollToBottom()
     },
     onError(message: string) {
-      aiMsg.content = aiMsg.content || message || '服务暂时不可用，请稍后重试。'
-      aiMsg.confidence = 'low'
+      const latest = getLatestAi()
+      latest.content = latest.content || message || '服务暂时不可用，请稍后重试。'
+      latest.confidence = 'low'
       loading.value = false
       scrollToBottom()
     }

@@ -46,7 +46,7 @@ public class TikaParser implements DocumentParser {
 
             TikaDocumentReader reader = new TikaDocumentReader(new FileSystemResource(tempFile.toFile()));
             String text = reader.get().stream()
-                    .map(Document::getContent)
+                    .map(Document::getText)
                     .reduce("", (a, b) -> a + "\n" + b);
 
             long elapsed = System.currentTimeMillis() - start;

@@ -39,17 +39,25 @@
               </svg>
             </div>
             <div class="msg-ai-content">
-              <!-- 思考链可视化 -->
-              <div v-if="msg.thinkingSteps && msg.thinkingSteps.length" class="thinking-chain">
+              <!-- 思考链可视化（默认折叠） -->
+              <details v-if="msg.thinkingSteps && msg.thinkingSteps.length" class="thinking-chain">
+                <summary class="thinking-summary">
+                  <span class="thinking-summary-icon">🧠</span>
+                  <span class="thinking-summary-text">
+                    AI 思考过程（{{ msg.thinkingSteps.length }} 步）
+                    <span class="thinking-summary-total-time">{{ formatDuration(msg.thinkingSteps[msg.thinkingSteps.length - 1]?.duration) }}</span>
+                  </span>
+                </summary>
                 <div class="thinking-steps">
                   <div v-for="(step, si) in msg.thinkingSteps" :key="si" class="thinking-step">
                     <span class="thinking-step-icon">{{ stepIcon(step.type) }}</span>
                     <span class="thinking-step-text">{{ step.text }}</span>
                     <span v-if="step.hits !== undefined" class="thinking-step-hits">→ {{ step.hits }} 篇</span>
+                    <span v-if="step.duration !== undefined" class="thinking-step-time">{{ formatDuration(step.duration) }}</span>
                   </div>
                 </div>
-              </div>
-              <div class="msg-ai-text" v-html="formatAnswer(msg.content)"></div>
+              </details>
+              <div class="msg-ai-text" v-html="formatAnswer(msg.content)" @click="onCitationClick"></div>
               <span v-if="loading && i === messages.length - 1 && msg.role === 'assistant'" class="cursor-blink">|</span>
 
               <!-- 降级提示 -->
@@ -59,7 +67,7 @@
 
               <!-- 来源引用卡片 -->
               <div v-if="msg.sources && msg.sources.length" class="source-cards">
-                <div v-for="(s, si) in msg.sources" :key="si" class="source-card">
+                <div v-for="(s, si) in msg.sources" :key="si" :id="'source-' + (si + 1)" class="source-card">
                   <div class="source-card-icon">📄</div>
                   <div class="source-card-body">
                     <div class="source-card-title">{{ s.title }}</div>
@@ -186,6 +194,7 @@ interface ThinkingStep {
   type: 'analyze' | 'search' | 'synthesize'
   text: string
   hits?: number
+  duration?: number  // 从 Agent 开始的累计毫秒数
 }
 
 interface Message {
@@ -322,8 +331,33 @@ function formatAnswer(text: string): string {
   if (!text) return ''
   return text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    // 引用编号 [1] [2] [1][2] → 可点击上标
+    .replace(/\[(\d+)\]/g, '<sup class="citation-ref" data-ref="$1">[$1]</sup>')
+    // 兼容旧格式 [来源: xxx]
     .replace(/\[来源:\s*(.*?)\]/g, '<span class="inline-cite">📎 $1</span>')
     .replace(/\n/g, '<br>')
+}
+
+function formatDuration(ms: number | undefined): string {
+  if (ms === undefined || ms === null) return ''
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const min = Math.floor(ms / 60000)
+  const sec = Math.round((ms % 60000) / 1000)
+  return `${min}m${sec}s`
+}
+
+function onCitationClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.classList.contains('citation-ref')) return
+  const ref = target.dataset.ref
+  if (!ref) return
+  const sourceEl = document.getElementById('source-' + ref)
+  if (sourceEl) {
+    sourceEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    sourceEl.classList.add('source-flash')
+    setTimeout(() => sourceEl.classList.remove('source-flash'), 2000)
+  }
 }
 
 function confidenceLabel(level: string): string {
@@ -400,6 +434,13 @@ defineExpose({ addSystemMessage })
 .msg-ai-text { font-size: 14px; line-height: 1.75; color: #1a1a1a; word-break: break-word; }
 .msg-ai-text :deep(p) { margin-bottom: 8px; }
 .msg-ai-text :deep(.inline-cite) { color: #409EFF; font-weight: 500; font-size: 12px; }
+/* 引用编号 [N] */
+.msg-ai-text :deep(.citation-ref) {
+  color: #409EFF; font-weight: 600; font-size: 11px; cursor: pointer;
+  padding: 0 2px; border-radius: 3px; transition: background .15s;
+  vertical-align: super; line-height: 1;
+}
+.msg-ai-text :deep(.citation-ref:hover) { background: #ecf5ff; text-decoration: underline; }
 
 .cursor-blink { display: inline; animation: blink .7s infinite; color: #409EFF; font-weight: 700; }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
@@ -411,19 +452,48 @@ defineExpose({ addSystemMessage })
 .thinking-dots span:nth-child(3) { animation-delay: .4s; }
 @keyframes dotPulse { 0%,60%,100% { opacity: .3; } 30% { opacity: 1; } }
 
-/* ===== 思考链 ===== */
+/* ===== 思考链（默认折叠） ===== */
 .thinking-chain {
   margin-bottom: 12px;
   background: linear-gradient(135deg, #f0f9ff 0%, #faf5ff 100%);
   border: 1px solid #e0e7ff;
   border-radius: 10px;
-  padding: 12px 16px;
+  overflow: hidden;
 }
-.thinking-steps { display: flex; flex-direction: column; gap: 8px; }
+.thinking-chain[open] {
+  padding: 0;
+}
+.thinking-summary {
+  padding: 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  font-size: 13px;
+  color: #6b7280;
+  list-style: none;  /* 隐藏默认三角箭头 */
+}
+.thinking-summary::-webkit-details-marker { display: none; }
+.thinking-summary::marker { display: none; content: ''; }
+.thinking-summary-icon { font-size: 14px; }
+.thinking-summary-text { flex: 1; }
+.thinking-summary-total-time {
+  font-size: 11px; color: #9ca3af; margin-left: 8px;
+}
+.thinking-steps {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 0 16px 12px;
+}
+.thinking-chain[open] .thinking-steps {
+  border-top: 1px solid #e0e7ff;
+  padding-top: 10px;
+}
 .thinking-step { display: flex; align-items: baseline; gap: 6px; line-height: 1.5; }
 .thinking-step-icon { flex-shrink: 0; font-size: 14px; }
-.thinking-step-text { font-size: 13px; color: #374151; }
+.thinking-step-text { font-size: 13px; color: #374151; flex: 1; }
 .thinking-step-hits { font-size: 12px; color: #6b7280; white-space: nowrap; }
+.thinking-step-time { font-size: 11px; color: #9ca3af; white-space: nowrap; margin-left: 4px; }
 
 /* ===== 降级提示 ===== */
 .fallback-badge {
@@ -439,6 +509,15 @@ defineExpose({ addSystemMessage })
   border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; transition: border-color .15s;
 }
 .source-card:hover { border-color: #409EFF; }
+.source-card.source-flash {
+  animation: sourceHighlight 2s ease-out;
+  border-color: #409EFF;
+  background: #ecf5ff;
+}
+@keyframes sourceHighlight {
+  0% { background: #d9ecff; border-color: #409EFF; transform: scale(1.02); }
+  100% { background: #f9fafb; border-color: #e5e7eb; transform: scale(1); }
+}
 .source-card-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 .source-card-body { min-width: 0; }
 .source-card-title { font-size: 12px; font-weight: 600; color: #409EFF; margin-bottom: 2px; }

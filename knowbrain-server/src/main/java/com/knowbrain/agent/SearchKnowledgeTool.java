@@ -38,13 +38,15 @@ public class SearchKnowledgeTool implements
 
     public record Response(List<SearchResultItem> results, int totalHits) {}
 
-    public record SearchResultItem(String title, String text, double score) {}
+    /** 带引用编号的搜索结果项，LLM 可通过 ref 编号在回答中使用 [N] 标注 */
+    public record SearchResultItem(int ref, String title, String text, double score) {}
 
     // ==================== 实例字段 ====================
 
     private final HybridSearchService searchService;
     private final List<Long> spaceIds;
     private final String category;
+    private final long startTimeMs;  // Agent 开始时间，用于计算每次搜索的耗时
 
     /** 跨多次调用的累计结果（按 documentId + chunkIndex 复合去重），供最终组装 ChatResponse.sources */
     private final List<SearchResult> cachedResults = new ArrayList<>();
@@ -57,10 +59,12 @@ public class SearchKnowledgeTool implements
     private final List<Map<String, Object>> thinkingEvents = new ArrayList<>();
 
     public SearchKnowledgeTool(HybridSearchService searchService,
-                               List<Long> spaceIds, String category) {
+                               List<Long> spaceIds, String category,
+                               long startTimeMs) {
         this.searchService = searchService;
         this.spaceIds = (spaceIds != null) ? spaceIds : List.of();
         this.category = (category != null && !category.isBlank()) ? category : null;
+        this.startTimeMs = startTimeMs;
     }
 
     // ==================== Function 接口实现 ====================
@@ -74,9 +78,13 @@ public class SearchKnowledgeTool implements
                 spaceIds,
                 category);
 
+        // 编号从已有的 cachedResults 数量开始，保证跨多次调用的引用编号全局唯一
+        int baseRef = cachedResults.size();
         List<SearchResultItem> items = new ArrayList<>();
-        for (SearchResult sr : hits) {
+        for (int i = 0; i < hits.size(); i++) {
+            SearchResult sr = hits.get(i);
             items.add(new SearchResultItem(
+                    baseRef + i + 1,  // 引用编号，1-based
                     sr.getDocumentTitle() != null ? sr.getDocumentTitle() : "",
                     truncate(sr.getContent(), 600),
                     sr.getScore() != null ? sr.getScore() : 0.0));
@@ -87,11 +95,12 @@ public class SearchKnowledgeTool implements
             }
         }
 
-        // 记录思考链事件（查询词 + 命中数）
-        thinkingEvents.add(Map.of(
+        // 记录思考链事件（查询词 + 命中数 + 耗时）
+        thinkingEvents.add(new HashMap<>(Map.of(
                 "type", "search",
                 "text", request.query(),
-                "hits", items.size()));
+                "hits", items.size(),
+                "duration", System.currentTimeMillis() - startTimeMs)));
 
         return new Response(items, items.size());
     }

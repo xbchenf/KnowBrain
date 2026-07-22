@@ -167,11 +167,12 @@ public class RAGServiceImpl implements RAGService {
             return response;
         }
 
-        // 5. 拼接上下文
+        // 5. 拼接上下文（含文档标题 + 编号，供 LLM [N] 引用）
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < sources.size(); i++) {
             SearchResult s = sources.get(i);
-            context.append("【参考资料").append(i + 1).append("】\n")
+            context.append("【参考资料").append(i + 1).append("】")
+                    .append(" 标题：").append(s.getDocumentTitle()).append("\n")
                     .append(s.getContent()).append("\n\n");
         }
 
@@ -323,11 +324,12 @@ public class RAGServiceImpl implements RAGService {
                     thinkingEvents);
         }
 
-        // 5. 拼接上下文
+        // 5. 拼接上下文（含文档标题 + 编号，供 LLM [N] 引用）
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < sources.size(); i++) {
             SearchResult s = sources.get(i);
-            context.append("【参考资料").append(i + 1).append("】\n")
+            context.append("【参考资料").append(i + 1).append("】")
+                    .append(" 标题：").append(s.getDocumentTitle()).append("\n")
                     .append(s.getContent()).append("\n\n");
         }
 
@@ -574,7 +576,7 @@ public class RAGServiceImpl implements RAGService {
 
         // 1. 创建本次请求的检索工具（携带 spaceIds / category 权限过滤）
         var searchTool = new SearchKnowledgeTool(
-                hybridSearchService, spaceIds, category);
+                hybridSearchService, spaceIds, category, tStart);
 
         // 2. 加载 Prompt
         String systemPrompt = loadResource(agentPromptTemplate);
@@ -582,10 +584,11 @@ public class RAGServiceImpl implements RAGService {
 
         // 思考链：问题分析（关键词分类，零延迟）
         List<Map<String, Object>> thinkingEvents = new ArrayList<>();
-        thinkingEvents.add(Map.of(
+        thinkingEvents.add(new HashMap<>(Map.of(
                 "type", "analyze",
-                "text", classifyQuestionForThinking(question)
-        ));
+                "text", classifyQuestionForThinking(question),
+                "duration", System.currentTimeMillis() - tStart
+        )));
 
         log.info("[Agent] 检索开始 question=\"{}\" rewritten=\"{}\"", question, pre.rewrittenQuery());
 
@@ -602,10 +605,11 @@ public class RAGServiceImpl implements RAGService {
                     .content();
         } catch (Exception e) {
             log.warn("[Agent] 调用失败，降级到标准 RAG 管线: {}", e.getMessage());
-            thinkingEvents.add(Map.of(
+            thinkingEvents.add(new HashMap<>(Map.of(
                     "type", "synthesize",
-                    "text", "Agent 检索超时，已切换至标准检索模式"
-            ));
+                    "text", "Agent 检索超时，已切换至标准检索模式",
+                    "duration", System.currentTimeMillis() - tStart
+            )));
             ChatResponse fallback = fallbackToStandardPipeline(question, spaceIds, history, category);
             fallback.setThinkingEvents(thinkingEvents);
             return fallback;
@@ -613,12 +617,13 @@ public class RAGServiceImpl implements RAGService {
 
         // 提取搜索阶段的思考链事件 + 追加汇总事件
         thinkingEvents.addAll(searchTool.getThinkingEvents());
-        thinkingEvents.add(Map.of(
+        thinkingEvents.add(new HashMap<>(Map.of(
                 "type", "synthesize",
                 "text", searchTool.getCachedResults().isEmpty()
                         ? "未找到相关信息"
-                        : "信息检索完成，开始生成回答..."
-        ));
+                        : "信息检索完成，开始生成回答...",
+                "duration", System.currentTimeMillis() - tStart
+        )));
 
         // 4. 汇总 Agent 多次搜索累积的文档
         List<SearchResult> allSources = searchTool.getCachedResults();
@@ -669,7 +674,7 @@ public class RAGServiceImpl implements RAGService {
                                           List<Map<String, Object>> thinkingEvents) {
         // 1. 创建本次请求的检索工具
         var searchTool = new SearchKnowledgeTool(
-                hybridSearchService, spaceIds, category);
+                hybridSearchService, spaceIds, category, startMs);
 
         // 2. 加载 Prompt
         String systemPrompt = loadResource(agentPromptTemplate);
@@ -686,10 +691,11 @@ public class RAGServiceImpl implements RAGService {
         Flux<Map<String, Object>> thinkingFlux = Flux.create(sink -> {
             try {
                 // 3a. 推送 analyze 事件（零延迟，LLM 调用前立即发送）
-                sink.next(Map.of(
+                sink.next(new HashMap<>(Map.of(
                         "type", "analyze",
-                        "text", classifyQuestionForThinking(question)
-                ));
+                        "text", classifyQuestionForThinking(question),
+                        "duration", System.currentTimeMillis() - startMs
+                )));
 
                 // 3b. ★ 核心：创建包装 Function，在 searchTool.apply() 之后立即推送 thinking 事件
                 //       Spring AI 每调用一次 searchKnowledge 就触发一次该函数 → sink.next() → 实时 SSE
@@ -721,12 +727,13 @@ public class RAGServiceImpl implements RAGService {
                 allSourcesRef.set(sources);
 
                 // 3d. 推送 synthesize 事件
-                sink.next(Map.of(
+                sink.next(new HashMap<>(Map.of(
                         "type", "synthesize",
                         "text", sources.isEmpty()
                                 ? "未找到相关信息"
-                                : "信息检索完成，开始生成回答..."
-                ));
+                                : "信息检索完成，开始生成回答...",
+                        "duration", System.currentTimeMillis() - startMs
+                )));
 
                 sink.complete();
                 log.info("[AgentStream] 实时推送完成 searchCalls={} sources={}",
@@ -736,10 +743,11 @@ public class RAGServiceImpl implements RAGService {
                 log.warn("[AgentStream] Agent 循环失败: {}", e.getMessage());
                 agentFailed.set(true);
                 try {
-                    sink.next(Map.of(
+                    sink.next(new HashMap<>(Map.of(
                             "type", "synthesize",
-                            "text", "Agent 检索超时，已切换至标准检索模式"
-                    ));
+                            "text", "Agent 检索超时，已切换至标准检索模式",
+                            "duration", System.currentTimeMillis() - startMs
+                    )));
                 } catch (Exception ignored) {}
                 sink.error(e);
             }
@@ -849,7 +857,8 @@ public class RAGServiceImpl implements RAGService {
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < sources.size(); i++) {
             SearchResult s = sources.get(i);
-            context.append("【参考资料").append(i + 1).append("】\n")
+            context.append("【参考资料").append(i + 1).append("】")
+                    .append(" 标题：").append(s.getDocumentTitle()).append("\n")
                     .append(s.getContent()).append("\n\n");
         }
 

@@ -171,7 +171,7 @@ public class RAGServiceImpl implements RAGService {
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < sources.size(); i++) {
             SearchResult s = sources.get(i);
-            context.append("【参考资料").append(i + 1).append("】")
+            context.append("【来源").append(i + 1).append("】")
                     .append(" 标题：").append(s.getDocumentTitle()).append("\n")
                     .append(s.getContent()).append("\n\n");
         }
@@ -328,7 +328,7 @@ public class RAGServiceImpl implements RAGService {
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < sources.size(); i++) {
             SearchResult s = sources.get(i);
-            context.append("【参考资料").append(i + 1).append("】")
+            context.append("【来源").append(i + 1).append("】")
                     .append(" 标题：").append(s.getDocumentTitle()).append("\n")
                     .append(s.getContent()).append("\n\n");
         }
@@ -453,7 +453,9 @@ public class RAGServiceImpl implements RAGService {
                     1. 仅基于参考资料回答，不要编造信息
                     2. 如果参考资料不足以回答，请明确说明"当前文档库中未找到相关信息"
                     3. 回答简洁、清晰、专业
-                    4. 引用具体文档时，使用 [来源: 文档名] 标注
+                    4. 引用参考资料时，使用 [N] 编号标注，例如 [1] 或 [2][3]
+                       — 每个来源有编号（参见上下文中的【来源1】【来源2】）
+                       — 引用时只写数字 [1]，不要写文档名或"参考资料1"
                     5. 结合对话历史理解用户意图，回答时保持上下文连贯
 
                     %s
@@ -857,7 +859,7 @@ public class RAGServiceImpl implements RAGService {
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < sources.size(); i++) {
             SearchResult s = sources.get(i);
-            context.append("【参考资料").append(i + 1).append("】")
+            context.append("【来源").append(i + 1).append("】")
                     .append(" 标题：").append(s.getDocumentTitle()).append("\n")
                     .append(s.getContent()).append("\n\n");
         }

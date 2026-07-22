@@ -5,6 +5,7 @@ import com.knowbrain.common.RateLimiter;
 import com.knowbrain.common.Result;
 import com.knowbrain.permission.PermissionService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -12,9 +13,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * RAG 问答控制器
@@ -80,7 +83,8 @@ public class RAGController {
      */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody Map<String, Object> body,
-                                  HttpServletRequest request) {
+                                  HttpServletRequest request,
+                                  HttpServletResponse response) {
         checkRateLimit(request);
         String question = (String) body.get("question");
         if (question == null || question.isBlank()) {
@@ -95,6 +99,8 @@ public class RAGController {
         SseEmitter emitter = new SseEmitter(300_000L); // 5 分钟超时
 
         // 在独立线程中桥接 Flux → SSE
+        // ★ 捕获 response 供工作线程 flush，确保每个 SSE 事件即时到达浏览器
+        final HttpServletResponse httpResp = response;
         Thread worker = new Thread(() -> {
             try {
                 log.info("SSE: 开始流式处理 question={} historyRounds={} category={}", question, history.size() / 2, category);
@@ -105,26 +111,16 @@ public class RAGController {
                 // ★ 订阅思考链 Flux（Agent 模式下为实时流，非 Agent 模式为空 Flux）
                 //    思考链完成后自动订阅 token 流，形成"思考 → 回答"的流水线
                 ctx.thinkingFlux()
-                        .doOnNext(event -> {
-                            try {
-                                emitter.send(SseEmitter.event()
-                                        .name("thinking")
-                                        .data(event));
-                                log.debug("SSE: thinking 事件已推送 type={}", event.get("type"));
-                            } catch (Exception ex) {
-                                log.warn("SSE thinking 事件推送失败: {}", ex.getMessage());
-                            }
-                        })
+                        .doOnNext(event -> sendAndFlush(emitter, httpResp,
+                                () -> SseEmitter.event().name("thinking").data(event),
+                                "thinking"))
                         .doOnComplete(() -> {
                             log.info("SSE: thinkingFlux 完成，开始订阅 token 流");
                             // 思考链完成 → 订阅 token 流
-                            ctx.tokens().doOnNext(token -> {
-                                try {
-                                    emitter.send(SseEmitter.event().name("token").data(token));
-                                } catch (Exception e) {
-                                    log.warn("SSE token 推送失败: {}", e.getMessage());
-                                }
-                            }).doOnComplete(() -> {
+                            ctx.tokens().doOnNext(token -> sendAndFlush(emitter, httpResp,
+                                    () -> SseEmitter.event().name("token").data(token),
+                                    "token"))
+                            .doOnComplete(() -> {
                                 log.info("SSE: token 流完成，推送元数据");
                                 try {
                                     // 推送溯源列表（Agent 路径通过 Supplier 延迟计算）
@@ -140,6 +136,7 @@ public class RAGController {
                                     emitter.send(SseEmitter.event()
                                             .name("done")
                                             .data(done));
+                                    httpResp.flushBuffer();
                                     emitter.complete();
                                     log.info("SSE: 流式问答完成");
                                 } catch (Exception e) {
@@ -152,6 +149,7 @@ public class RAGController {
                                     emitter.send(SseEmitter.event()
                                             .name("error")
                                             .data("服务暂时不可用，请稍后重试。"));
+                                    httpResp.flushBuffer();
                                 } catch (Exception ignored) {}
                                 emitter.completeWithError(e);
                             }).subscribe();
@@ -159,19 +157,17 @@ public class RAGController {
                         .doOnError(e -> {
                             log.warn("SSE: thinkingFlux 异常，仍尝试订阅 token 流: {}", e.getMessage());
                             // Agent 思考链异常时仍尝试推送 token 流（降级回答）
-                            ctx.tokens().doOnNext(token -> {
-                                try {
-                                    emitter.send(SseEmitter.event().name("token").data(token));
-                                } catch (Exception ex) {
-                                    log.warn("SSE token 推送失败: {}", ex.getMessage());
-                                }
-                            }).doOnComplete(() -> {
+                            ctx.tokens().doOnNext(token -> sendAndFlush(emitter, httpResp,
+                                    () -> SseEmitter.event().name("token").data(token),
+                                    "token"))
+                            .doOnComplete(() -> {
                                 try {
                                     Map<String, Object> done = Map.of(
                                             "confidence", "low",
                                             "fallback", true
                                     );
                                     emitter.send(SseEmitter.event().name("done").data(done));
+                                    httpResp.flushBuffer();
                                     emitter.complete();
                                 } catch (Exception ex) {
                                     emitter.completeWithError(ex);
@@ -186,6 +182,7 @@ public class RAGController {
                     emitter.send(SseEmitter.event()
                             .name("error")
                             .data("服务暂时不可用，请稍后重试。"));
+                    httpResp.flushBuffer();
                 } catch (Exception ignored) {}
                 emitter.completeWithError(e);
             }
@@ -195,6 +192,24 @@ public class RAGController {
         worker.start();
 
         return emitter;
+    }
+
+    /**
+     * SSE 发送 + 立即 flush，确保事件实时到达浏览器（而非被 Tomcat 缓冲）。
+     * 缓冲默认 8KB，首个事件可能很小（thinking analyze 只有 ~100 字节），
+     * 不 flush 会导致整个思考链在 tomcat buffer 中排队直到 token 流阶段。
+     */
+    private void sendAndFlush(SseEmitter emitter, HttpServletResponse response,
+                               Supplier<SseEmitter.SseEventBuilder> eventSupplier,
+                               String eventType) {
+        try {
+            emitter.send(eventSupplier.get());
+            response.flushBuffer();
+        } catch (IOException ex) {
+            log.warn("SSE {} 事件推送失败: {}", eventType, ex.getMessage());
+        } catch (Exception ex) {
+            log.warn("SSE {} 事件 flush 失败: {}", eventType, ex.getMessage());
+        }
     }
 
     /**

@@ -51,12 +51,22 @@ public class FaqService {
     }
 
     /**
-     * 匹配 FAQ：先问题文本匹配，再关键词计数
+     * 匹配 FAQ：先问题文本匹配，再关键词计数。
+     *
+     * <p>包含多问句检测：如用户一次问了多个问题（≥2 个 "？"），
+     * 跳过 FAQ 短路，交由标准 RAG/Agent 管线综合检索生成。</p>
      */
     public FaqMatchResult match(String query) {
         if (query == null || query.isEmpty() || cachedEntries.isEmpty()) return null;
 
         String q = query.toLowerCase().trim();
+
+        // 0. 多问题检测：用户一次问多个问题 → 跳过 FAQ，走 RAG 综合回答
+        long questionMarkCount = q.chars().filter(c -> c == '？' || c == '?').count();
+        if (questionMarkCount >= 2) {
+            log.info("FAQ 跳过：检测到 {} 个问号，疑似多问题综合查询", questionMarkCount);
+            return null;
+        }
 
         // 1. 优先：问题文本直接匹配（覆盖欢迎页推荐问题点击等场景）
         for (int i = 0; i < cachedEntries.size(); i++) {
